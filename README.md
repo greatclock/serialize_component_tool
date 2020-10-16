@@ -73,20 +73,20 @@ public class SerializeToolExtend {
     // The return type should be SupportedTypeData, make sure return value is valid
     // The method name does not matter. Just make it proper in your project.
     [SupportedComponentType]
-	static SupportedTypeData DefineTypeMyComponent() {
+    static SupportedTypeData DefineTypeMyComponent() {
         // Your should specify the component type to be supported, sorting priority,
         // show name in tool window, using namespace in generated code,
         // type name in generated code, and variable name in generated code.
         // The last 4 parameters could be null to make them configurated automatically.
-		return new SupportedTypeData(typeof(MyComponent), 1000, null, null, null, null);
-	}
+        return new SupportedTypeData(typeof(MyComponent), 1000, null, null, null, null);
+    }
     
-	[SupportedComponentType]
-	static SupportedTypeData DefineTypeTween() {
+    [SupportedComponentType]
+    static SupportedTypeData DefineTypeTween() {
         // Make "MyTweenComponent" component supported.
         // And specify its variable name "tween" in generated code.
-		return new SupportedTypeData(typeof(MyTweenComponent), 1000, null, null, null, "tween");
-	}
+        return new SupportedTypeData(typeof(MyTweenComponent), 1000, null, null, null, "tween");
+    }
     
 }
 ```

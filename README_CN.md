@@ -73,17 +73,17 @@ public class SerializeToolExtend {
     // 此Attribute为必需，方法应为static并返回包含定制化信息的SupportedTypeData实例
     // 方法名称并不重要，方便代码阅读及管理即可
     [SupportedComponentType]
-	static SupportedTypeData DefineTypeMyComponent() {
+    static SupportedTypeData DefineTypeMyComponent() {
         // 指定要支持组件的类型，排序优先级，界面显示组件名称，生成代码中的引用的命名空间，
         // 生成代码中组件类型名称，及组件的变量名称。后四项均可传入null以采用默认参数（自动配置）
-		return new SupportedTypeData(typeof(MyComponent), 1000, null, null, null, null);
-	}
+        return new SupportedTypeData(typeof(MyComponent), 1000, null, null, null, null);
+    }
     
-	[SupportedComponentType]
-	static SupportedTypeData DefineTypeTween() {
+    [SupportedComponentType]
+    static SupportedTypeData DefineTypeTween() {
         // 增加此工具对MyTweenComponent组件的支持，并为此组件指定生成代码中的变量名为tween
-		return new SupportedTypeData(typeof(MyTweenComponent), 1000, null, null, null, "tween");
-	}
+        return new SupportedTypeData(typeof(MyTweenComponent), 1000, null, null, null, "tween");
+    }
     
 }
 ```
