@@ -78,6 +78,14 @@ namespace GreatClock.Common.SerializeTools {
 		static SupportedTypeData DefineTypeRawImage() {
 			return new SupportedTypeData(typeof(UnityEngine.UI.RawImage), 102, null, null, null, null);
 		}
+		[SupportedComponentType]
+		static SupportedTypeData DefineTypeCanvas() {
+			return new SupportedTypeData(typeof(Canvas), 110, null, null, null, null);
+		}
+		[SupportedComponentType]
+		static SupportedTypeData DefineTypeCanvasGroup() {
+			return new SupportedTypeData(typeof(CanvasGroup), 110, null, null, null, null);
+		}
 
 		private static Dictionary<int, SupportedTypeData> supported_type_datas;
 
@@ -260,13 +268,17 @@ namespace GreatClock.Common.SerializeTools {
 						trans.Push(t.GetChild(i));
 					}
 				}
-				if (t == root) { continue; }
+				if (t == root) {
+					components.Add(new ObjectComponents(t.gameObject, "Self", null, null, null));
+					continue;
+				}
 				if (!isItem && !name.StartsWith("m_")) { continue; }
+				bool inAnotherPrefab = PrefabUtility.GetOutermostPrefabInstanceRoot(t.gameObject) != null;
 				name = name.Substring(2, name.Length - 2);
 				string varName = name;
 				string typeName = null;
 				string typeVarName = null;
-				if (isItem) {
+				if (isItem && !inAnotherPrefab) {
 					typeName = string.Concat(cls, "_", name);
 					typeVarName = name;
 					int ivv = name.IndexOf("||");
@@ -286,7 +298,7 @@ namespace GreatClock.Common.SerializeTools {
 				}
 				if (!MatchVariableName(varName)) { continue; }
 				ObjectComponents ocs = null;
-				if (isItem) {
+				if (isItem && !inAnotherPrefab) {
 					ocs = CollectComponents(t, varName, typeName, typeVarName);
 				}
 				if (ocs == null) {
@@ -322,7 +334,6 @@ namespace GreatClock.Common.SerializeTools {
 				Debug.LogException(e);
 			}
 			if (code == null) { return null; }
-			//Log.w(code);
 			Match matchClassDefine = reg_class_def.Match(code);
 			if (!matchClassDefine.Success) { return null; }
 			int i0 = matchClassDefine.Index + matchClassDefine.Length;
@@ -341,8 +352,6 @@ namespace GreatClock.Common.SerializeTools {
 			int i1 = code.Length;
 			if (matchSubclassStart.Success) { i1 = matchSubclassStart.Index; }
 			cp.publicProperty = reg_public_property.Match(code, i0, i1 - i0).Success;
-			//Log.df("partial : {0}  public property : {1}  base class : {2}",
-			//	cp.isPartialClass, cp.publicProperty, cp.baseClass);
 			return cp;
 		}
 
@@ -803,14 +812,22 @@ namespace GreatClock.Common.SerializeTools {
 				ObjectComponents oc = sortedComponents.Pop();
 				//TODO find type
 				string typeFullName = string.IsNullOrEmpty(ns) ? oc.cls : string.Concat(ns, ".", oc.cls);
-				//Log.d(typeFullName);
-				Type type = Type.GetType(typeFullName + ",Assembly-CSharp");
-				//End TODO
-				//Log.d(type);
+				Type type = null;
+				Type ft = null;
+				Type tm = typeof(MonoBehaviour);
+				foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies()) {
+					type = Type.GetType(typeFullName + "," + assembly.GetName().Name);
+					if (type == null) { continue; }
+					if (type.IsSubclassOf(tm)) { break; }
+					ft = type;
+					type = null;
+				}
 				if (type == null) {
-					Debug.LogErrorFormat("Cannot Find Type for {0} !", oc.cls);
-				} else if (!type.IsSubclassOf(typeof(MonoBehaviour))) {
-					Debug.LogErrorFormat("Type : '{0}' is not subclass of MonoBehaviour !", type.FullName);
+					if (ft == null) {
+						Debug.LogErrorFormat("Cannot Find Type for {0} !", oc.cls);
+					} else {
+						Debug.LogErrorFormat("Type : '{0}' is not subclass of MonoBehaviour !", ft.FullName);
+					}
 				} else {
 					oc.type = type;
 					Component component = oc.go.GetComponent(type);
@@ -832,7 +849,6 @@ namespace GreatClock.Common.SerializeTools {
 						int cCount = ioc.Count;
 						for (int j = 0; j < cCount; j++) {
 							ComponentData cd = ioc[j];
-							//Log.dt(ioc.name, cd.type.codeTypeName + " " + cd.type.variableName);
 							SerializedProperty pComponent = pObj.FindPropertyRelative("m_" + cd.type.variableName);
 							if (pComponent == null) {
 								Debug.LogErrorFormat(cd.component, "Cannot Find property for Component '{0}' at '{1}' !",
