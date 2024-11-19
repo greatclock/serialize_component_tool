@@ -52,23 +52,23 @@ namespace GreatClock.Common.SerializeTools {
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeButton() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Button), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Button), 101, null, null, null, null, true);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeToggle() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Toggle), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Toggle), 101, null, null, null, null, true);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeSlider() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Slider), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Slider), 101, null, null, null, null, true);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeScrollbar() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Scrollbar), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Scrollbar), 101, null, null, null, null, true);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeInputField() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.InputField), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.InputField), 101, null, null, null, null, true);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeImage() {
@@ -130,7 +130,7 @@ namespace GreatClock.Common.SerializeTools {
 								variableName = td.type.Name;
 								variableName = variableName.Substring(0, 1).ToLower() + variableName.Substring(1);
 							}
-							td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName);
+							td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName, td.requireClearOnRecycle);
 							supported_type_datas.Add(td.type.GetHashCode(), td);
 						}
 					}
@@ -438,7 +438,7 @@ namespace GreatClock.Common.SerializeTools {
 			if (!mGUIStyleInited) {
 				mGUIStyleInited = true;
 				mStyleBoldLabel = "BoldLabel";
-				mStyleBox = "CN Box";
+				mStyleBox = GUI.skin.FindStyle("OL Box") ?? GUI.skin.FindStyle("CN Box");
 			}
 			EditorGUI.BeginDisabledGroup(EditorApplication.isCompiling);
 			EditorGUILayout.BeginHorizontal();
@@ -921,6 +921,20 @@ namespace GreatClock.Common.SerializeTools {
 			for (int i = 0, imax = clses.Count; i < imax; i++) {
 				ClassData cls = clses[i];
 				for (int j = cls.fields.Count - 1; j >= 0; j--) {
+					FieldData field = cls.fields[j];
+					if (!string.IsNullOrEmpty(field.itemType)) {
+						for (int k = 0; k < imax; k++) {
+							ClassData cd = clses[k];
+							if (field.itemType == cd.cls) {
+								field.itemClass = cd;
+							}
+						}
+					}
+				}
+			}
+			for (int i = 0, imax = clses.Count; i < imax; i++) {
+				ClassData cls = clses[i];
+				for (int j = cls.fields.Count - 1; j >= 0; j--) {
 					cls.fields[j].components.Sort(typeSorter);
 				}
 				string code = GetCode(ns, clses[i]);
@@ -938,10 +952,23 @@ namespace GreatClock.Common.SerializeTools {
 			public bool partialClass;
 			public bool publicProperty;
 			public List<FieldData> fields = new List<FieldData>();
+			public bool HasClear() {
+				for (int i = fields.Count - 1; i >= 0; i--) {
+					FieldData field = fields[i];
+					if (!string.IsNullOrEmpty(field.itemType)) { return true; }
+					for (int j = field.components.Count - 1; j >= 0; j--) {
+						SupportedTypeData comp = field.components[j];
+						string[] cc = comp.GetClearCalls();
+						if (cc != null && cc.Length > 0) { return true; }
+					}
+				}
+				return false;
+			}
 		}
 		private class FieldData {
 			public string name;
 			public string itemType;
+			public ClassData itemClass;
 			public string itemVar;
 			public List<SupportedTypeData> components = new List<SupportedTypeData>();
 		}
@@ -1001,9 +1028,11 @@ namespace GreatClock.Common.SerializeTools {
 			List<string> usings = new List<string>();
 			SortedList<string, SupportedTypeData[]> dataClasses = new SortedList<string, SupportedTypeData[]>();
 			StringBuilder code = new StringBuilder();
+			List<string> clearInvokes = new List<string>();
 			code.AppendLine("#pragma warning disable 649");
 			code.AppendLine();
 			Dictionary<string, KeyValuePair<string, string>> itemClasses = new Dictionary<string, KeyValuePair<string, string>>();
+			List<string> requireClearItemClasses = new List<string>();
 			string codeIndent = "";
 			if (!string.IsNullOrEmpty(ns)) {
 				codeIndent = "\t";
@@ -1023,6 +1052,13 @@ namespace GreatClock.Common.SerializeTools {
 					if (!string.IsNullOrEmpty(typeData.nameSpace) && !usings.Contains(typeData.nameSpace)) {
 						usings.Add(typeData.nameSpace);
 					}
+					string[] clearCalls = typeData.GetClearCalls();
+					if (clearCalls != null && clearCalls.Length > 0) {
+						string objstr = field.name + "." + typeData.variableName + ".";
+						foreach (string cc in clearCalls) {
+							clearInvokes.Add(objstr + cc);
+						}
+					}
 				}
 				string objTypeName = string.Concat(string.Join("_", tempStrings.ToArray()), "_Container");
 				if (!dataClasses.ContainsKey(objTypeName)) {
@@ -1041,6 +1077,20 @@ namespace GreatClock.Common.SerializeTools {
 				if (!string.IsNullOrEmpty(field.itemType) && !string.IsNullOrEmpty(field.itemVar) && !itemClasses.ContainsKey(objTypeName)) {
 					itemClasses.Add(objTypeName, new KeyValuePair<string, string>(field.itemType, field.itemVar));
 				}
+				if (field.itemClass != null) {
+					clearInvokes.Add(field.name + "." + "CacheAll()");
+					if (field.itemClass.HasClear()) {
+						requireClearItemClasses.Add(objTypeName);
+					}
+				}
+			}
+			if (clearInvokes.Count > 0) {
+				code.AppendLine(string.Format("{0}\tpublic void Clear() {{", codeIndent));
+				foreach (string ci in clearInvokes) {
+					code.AppendLine(string.Format("{0}\t\t{1};", codeIndent, ci));
+				}
+				code.AppendLine(string.Format("{0}\t}}", codeIndent));
+				code.AppendLine();
 			}
 			foreach (KeyValuePair<string, SupportedTypeData[]> kv in dataClasses) {
 				code.AppendLine(string.Format("{0}\t[System.Serializable]", codeIndent));
@@ -1062,7 +1112,9 @@ namespace GreatClock.Common.SerializeTools {
 				}
 				KeyValuePair<string, string> typeAndVar;
 				if (itemClasses.TryGetValue(kv.Key, out typeAndVar)) {
+					bool itemHasClear = requireClearItemClasses.Contains(kv.Key);
 					code.AppendLine(string.Format("{0}\t\tprivate Queue<{1}> mCachedInstances;", codeIndent, typeAndVar.Key));
+					code.AppendLine(string.Format("{0}\t\tprivate List<{1}> mUsingInstances;", codeIndent, typeAndVar.Key));
 					code.AppendLine(string.Format("{0}\t\tpublic {1} GetInstance() {{", codeIndent, typeAndVar.Key));
 					code.AppendLine(string.Format("{0}\t\t\t{1} instance = null;", codeIndent, typeAndVar.Key));
 					code.AppendLine(string.Format("{0}\t\t\tif (mCachedInstances != null) {{", codeIndent));
@@ -1080,15 +1132,34 @@ namespace GreatClock.Common.SerializeTools {
 					code.AppendLine(string.Format("{0}\t\t\tt1.localRotation = t0.localRotation;", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tt1.localScale = t0.localScale;", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tt1.SetSiblingIndex(t0.GetSiblingIndex() + 1);", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\tif (mUsingInstances == null) {{ mUsingInstances = new List<{1}>(); }}", codeIndent, typeAndVar.Key));
+					code.AppendLine(string.Format("{0}\t\t\tmUsingInstances.Add(instance);", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\treturn instance;", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t}}", codeIndent));
 					code.AppendLine(string.Format("{0}\t\tpublic bool CacheInstance({1} instance) {{", codeIndent, typeAndVar.Key));
 					code.AppendLine(string.Format("{0}\t\t\tif (instance == null || instance.Equals(null)) {{ return false; }}", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\tif (mUsingInstances == null || !mUsingInstances.Remove(instance)) {{ return false; }}", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tif (mCachedInstances == null) {{ mCachedInstances = new Queue<{1}>(); }}", codeIndent, typeAndVar.Key));
-					code.AppendLine(string.Format("{0}\t\t\tif (mCachedInstances.Contains(instance)) {{ return false; }}", codeIndent));
+					if (itemHasClear) { code.AppendLine(string.Format("{0}\t\t\tinstance.Clear();", codeIndent)); }
 					code.AppendLine(string.Format("{0}\t\t\tinstance.gameObject.SetActive(false);", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tmCachedInstances.Enqueue(instance);", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\treturn true;", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t}}", codeIndent));
+					code.AppendLine(string.Format("{0}\t\tpublic int CacheAll() {{", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\tif (mUsingInstances == null) {{ return 0; }}", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\tif (mCachedInstances == null) {{ mCachedInstances = new Queue<{1}>(); }}", codeIndent, typeAndVar.Key));
+					code.AppendLine(string.Format("{0}\t\t\tint ret = 0;", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\tfor (int i = mUsingInstances.Count - 1; i >= 0; i--) {{", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\t\t{1} instance = mUsingInstances[i];", codeIndent, typeAndVar.Key));
+					code.AppendLine(string.Format("{0}\t\t\t\tif (instance != null && !instance.Equals(null)) {{", codeIndent));
+					if (itemHasClear) { code.AppendLine(string.Format("{0}\t\t\t\t\tinstance.Clear();", codeIndent)); }
+					code.AppendLine(string.Format("{0}\t\t\t\t\tinstance.gameObject.SetActive(false);", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\t\t\tmCachedInstances.Enqueue(instance);", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\t\t\tret++;", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\t\t}}", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\t}}", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\tmUsingInstances.Clear();", codeIndent));
+					code.AppendLine(string.Format("{0}\t\t\treturn ret;", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t}}", codeIndent));
 					code.AppendLine();
 					if (!usings.Contains("System.Collections.Generic")) { usings.Add("System.Collections.Generic"); }
@@ -1232,7 +1303,7 @@ namespace GreatClock.Common.SerializeTools {
 			void OnGUI() {
 				if (!mStyleInited) {
 					mStyleInited = true;
-					mStyleBox = "CN Box";
+					mStyleBox = GUI.skin.FindStyle("OL Box") ?? GUI.skin.FindStyle("CN Box");
 					mStyleMessage = "CN Message";
 				}
 				if (codes != null) {
