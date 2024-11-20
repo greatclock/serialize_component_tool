@@ -20,7 +20,7 @@ namespace GreatClock.Common.SerializeTools {
 		public readonly string variableName;
 		public readonly bool requireClearOnRecycle;
 
-		public SupportedTypeData(Type type, int priority, string showName, string nameSpace, string codeTypeName, string variableName, bool requireClearOnRecycle = false) {
+		public SupportedTypeData(Type type, int priority, string showName, string nameSpace, string codeTypeName, string variableName, bool requireClearOnRecycle = true) {
 			this.type = type;
 			this.priority = priority;
 			this.showName = showName;

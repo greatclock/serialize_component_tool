@@ -48,35 +48,35 @@ namespace GreatClock.Common.SerializeTools {
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeText() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Text), 100, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Text), 100, null, null, null, null, false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeButton() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Button), 101, null, null, null, null, true);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Button), 101, null, null, null, null);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeToggle() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Toggle), 101, null, null, null, null, true);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Toggle), 101, null, null, null, null);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeSlider() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Slider), 101, null, null, null, null, true);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Slider), 101, null, null, null, null);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeScrollbar() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Scrollbar), 101, null, null, null, null, true);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Scrollbar), 101, null, null, null, null);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeInputField() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.InputField), 101, null, null, null, null, true);
+			return new SupportedTypeData(typeof(UnityEngine.UI.InputField), 101, null, null, null, null);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeImage() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Image), 102, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Image), 102, null, null, null, null, false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeRawImage() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.RawImage), 102, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.RawImage), 102, null, null, null, null, false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeCanvas() {
