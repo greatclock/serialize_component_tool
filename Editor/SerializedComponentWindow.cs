@@ -956,11 +956,7 @@ namespace GreatClock.Common.SerializeTools {
 				for (int i = fields.Count - 1; i >= 0; i--) {
 					FieldData field = fields[i];
 					if (!string.IsNullOrEmpty(field.itemType)) { return true; }
-					for (int j = field.components.Count - 1; j >= 0; j--) {
-						SupportedTypeData comp = field.components[j];
-						string[] cc = comp.GetClearCalls();
-						if (cc != null && cc.Length > 0) { return true; }
-					}
+					if (field.HasClear()) { return true; }
 				}
 				return false;
 			}
@@ -971,6 +967,14 @@ namespace GreatClock.Common.SerializeTools {
 			public ClassData itemClass;
 			public string itemVar;
 			public List<SupportedTypeData> components = new List<SupportedTypeData>();
+			public bool HasClear() {
+				for (int j = components.Count - 1; j >= 0; j--) {
+					SupportedTypeData comp = components[j];
+					string[] cc = comp.GetClearCalls();
+					if (cc != null && cc.Length > 0) { return true; }
+				}
+				return false;
+			}
 		}
 
 		private static bool GetClass(ObjectComponents ocs, ClassData cls) {
@@ -1052,12 +1056,17 @@ namespace GreatClock.Common.SerializeTools {
 					if (!string.IsNullOrEmpty(typeData.nameSpace) && !usings.Contains(typeData.nameSpace)) {
 						usings.Add(typeData.nameSpace);
 					}
-					string[] clearCalls = typeData.GetClearCalls();
-					if (clearCalls != null && clearCalls.Length > 0) {
-						string objstr = field.name + "." + typeData.variableName + ".";
-						foreach (string cc in clearCalls) {
-							clearInvokes.Add(objstr + cc);
+					if (field.itemClass == null) {
+						string[] clearCalls = typeData.GetClearCalls();
+						if (clearCalls != null && clearCalls.Length > 0) {
+							string objstr = field.name + "." + typeData.variableName + ".";
+							foreach (string cc in clearCalls) {
+								clearInvokes.Add(objstr + cc);
+							}
 						}
+					} else if (typeData.type == null && field.itemClass.HasClear()) {
+						string objstr = field.name + "." + typeData.variableName + ".";
+						clearInvokes.Add(objstr + "Clear()");
 					}
 				}
 				string objTypeName = string.Concat(string.Join("_", tempStrings.ToArray()), "_Container");
