@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace GreatClock.Common.SerializeTools {
 
@@ -1030,6 +1031,7 @@ namespace GreatClock.Common.SerializeTools {
 
 		private static string GetCode(string ns, ClassData cls) {
 			List<string> usings = new List<string>();
+			usings.Add(typeof(UnityEvent).Namespace);
 			SortedList<string, SupportedTypeData[]> dataClasses = new SortedList<string, SupportedTypeData[]>();
 			StringBuilder code = new StringBuilder();
 			List<string> clearInvokes = new List<string>();
@@ -1093,14 +1095,21 @@ namespace GreatClock.Common.SerializeTools {
 					}
 				}
 			}
-			if (clearInvokes.Count > 0) {
-				code.AppendLine(string.Format("{0}\tpublic void Clear() {{", codeIndent));
-				foreach (string ci in clearInvokes) {
-					code.AppendLine(string.Format("{0}\t\t{1};", codeIndent, ci));
-				}
-				code.AppendLine(string.Format("{0}\t}}", codeIndent));
-				code.AppendLine();
+			code.AppendLine(string.Format("{0}\tprivate UnityEvent mOnClear;", codeIndent));
+			code.AppendLine(string.Format("{0}\tpublic UnityEvent onClear {{", codeIndent));
+			code.AppendLine(string.Format("{0}\t\tget {{", codeIndent));
+			code.AppendLine(string.Format("{0}\t\t\tif (mOnClear == null) {{ mOnClear = new UnityEvent(); }}", codeIndent));
+			code.AppendLine(string.Format("{0}\t\t\treturn mOnClear;", codeIndent));
+			code.AppendLine(string.Format("{0}\t\t}}", codeIndent));
+			code.AppendLine(string.Format("{0}\t}}", codeIndent));
+			code.AppendLine();
+			code.AppendLine(string.Format("{0}\tpublic void Clear() {{", codeIndent));
+			foreach (string ci in clearInvokes) {
+				code.AppendLine(string.Format("{0}\t\t{1};", codeIndent, ci));
 			}
+			code.AppendLine(string.Format("{0}\t\tif (mOnClear != null) {{ mOnClear.Invoke(); mOnClear.RemoveAllListeners(); }}", codeIndent));
+			code.AppendLine(string.Format("{0}\t}}", codeIndent));
+			code.AppendLine();
 			foreach (KeyValuePair<string, SupportedTypeData[]> kv in dataClasses) {
 				code.AppendLine(string.Format("{0}\t[System.Serializable]", codeIndent));
 				code.AppendLine(string.Format("{0}\t{1} class {2} {{",
