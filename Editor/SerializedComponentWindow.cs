@@ -1038,7 +1038,6 @@ namespace GreatClock.Common.SerializeTools {
 			code.AppendLine("#pragma warning disable 649");
 			code.AppendLine();
 			Dictionary<string, KeyValuePair<string, string>> itemClasses = new Dictionary<string, KeyValuePair<string, string>>();
-			List<string> requireClearItemClasses = new List<string>();
 			string codeIndent = "";
 			if (!string.IsNullOrEmpty(ns)) {
 				codeIndent = "\t";
@@ -1090,9 +1089,6 @@ namespace GreatClock.Common.SerializeTools {
 				}
 				if (field.itemClass != null) {
 					clearInvokes.Add(field.name + "." + "CacheAll()");
-					if (field.itemClass.HasClear()) {
-						requireClearItemClasses.Add(objTypeName);
-					}
 				}
 			}
 			code.AppendLine(string.Format("{0}\tprivate UnityEvent mOnClear;", codeIndent));
@@ -1130,7 +1126,6 @@ namespace GreatClock.Common.SerializeTools {
 				}
 				KeyValuePair<string, string> typeAndVar;
 				if (itemClasses.TryGetValue(kv.Key, out typeAndVar)) {
-					bool itemHasClear = requireClearItemClasses.Contains(kv.Key);
 					code.AppendLine(string.Format("{0}\t\tprivate Queue<{1}> mCachedInstances;", codeIndent, typeAndVar.Key));
 					code.AppendLine(string.Format("{0}\t\tprivate List<{1}> mUsingInstances;", codeIndent, typeAndVar.Key));
 					code.AppendLine(string.Format("{0}\t\tpublic {1} GetInstance() {{", codeIndent, typeAndVar.Key));
@@ -1158,7 +1153,7 @@ namespace GreatClock.Common.SerializeTools {
 					code.AppendLine(string.Format("{0}\t\t\tif (instance == null || instance.Equals(null)) {{ return false; }}", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tif (mUsingInstances == null || !mUsingInstances.Remove(instance)) {{ return false; }}", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tif (mCachedInstances == null) {{ mCachedInstances = new Queue<{1}>(); }}", codeIndent, typeAndVar.Key));
-					if (itemHasClear) { code.AppendLine(string.Format("{0}\t\t\tinstance.Clear();", codeIndent)); }
+					code.AppendLine(string.Format("{0}\t\t\tinstance.Clear();", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tinstance.gameObject.SetActive(false);", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\tmCachedInstances.Enqueue(instance);", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\treturn true;", codeIndent));
@@ -1170,7 +1165,7 @@ namespace GreatClock.Common.SerializeTools {
 					code.AppendLine(string.Format("{0}\t\t\tfor (int i = mUsingInstances.Count - 1; i >= 0; i--) {{", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\t\t{1} instance = mUsingInstances[i];", codeIndent, typeAndVar.Key));
 					code.AppendLine(string.Format("{0}\t\t\t\tif (instance != null && !instance.Equals(null)) {{", codeIndent));
-					if (itemHasClear) { code.AppendLine(string.Format("{0}\t\t\t\t\tinstance.Clear();", codeIndent)); }
+					code.AppendLine(string.Format("{0}\t\t\t\t\tinstance.Clear();", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\t\t\tinstance.gameObject.SetActive(false);", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\t\t\tmCachedInstances.Enqueue(instance);", codeIndent));
 					code.AppendLine(string.Format("{0}\t\t\t\t\tret++;", codeIndent));
