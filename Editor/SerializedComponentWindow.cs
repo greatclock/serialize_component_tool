@@ -364,7 +364,7 @@ namespace GreatClock.Common.SerializeTools {
 				md5_calc = new MD5CryptoServiceProvider();
 			}
 			string str = string.Concat(Application.dataPath, "SerializedComponent4CSharp", key);
-			byte[] bytes = System.Text.Encoding.UTF8.GetBytes(str);
+			byte[] bytes = Encoding.UTF8.GetBytes(str);
 			return BitConverter.ToString(md5_calc.ComputeHash(bytes));
 		}
 
@@ -793,11 +793,13 @@ namespace GreatClock.Common.SerializeTools {
 			EditorGUI.EndDisabledGroup();
 			if (mToSetSerializedObjects) {
 				mToSetSerializedObjects = false;
-				SerializeObject(mNameSpaceList[mNameSpaceIndex], mRootComponents);
+				if (SerializeObject(mNameSpaceList[mNameSpaceIndex], mRootComponents)) {
+					AssetDatabase.SaveAssets();
+				}
 			}
 		}
 
-		private void SerializeObject(string ns, ObjectComponents ocs) {
+		private bool SerializeObject(string ns, ObjectComponents ocs) {
 			Queue<ObjectComponents> components = new Queue<ObjectComponents>();
 			components.Enqueue(ocs);
 			Stack<ObjectComponents> sortedComponents = new Stack<ObjectComponents>();
@@ -809,6 +811,7 @@ namespace GreatClock.Common.SerializeTools {
 					if (ioc.itemComponents != null) { components.Enqueue(ioc); }
 				}
 			}
+			bool ret = false;
 			while (sortedComponents.Count > 0) {
 				ObjectComponents oc = sortedComponents.Pop();
 				//TODO find type
@@ -868,9 +871,10 @@ namespace GreatClock.Common.SerializeTools {
 							}
 						}
 					}
-					so.ApplyModifiedProperties();
+					if (so.ApplyModifiedProperties()) { EditorUtility.SetDirty(component); ret = true; }
 				}
 			}
+			return ret;
 		}
 
 		private void ResetFolderIndex() {
