@@ -41,51 +41,51 @@ namespace GreatClock.Common.SerializeTools {
 
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeTransform() {
-			return new SupportedTypeData(typeof(Transform), int.MinValue, null, null, null, null);
+			return new SupportedTypeData(typeof(Transform), int.MinValue);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeRectTransform() {
-			return new SupportedTypeData(typeof(RectTransform), int.MinValue, null, null, null, null);
+			return new SupportedTypeData(typeof(RectTransform), int.MinValue);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeText() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Text), 100, null, null, null, null, false);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Text), 100).SetRequireClearOnRecycle(false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeButton() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Button), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Button), 101);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeToggle() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Toggle), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Toggle), 101);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeSlider() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Slider), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Slider), 101);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeScrollbar() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Scrollbar), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Scrollbar), 101);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeInputField() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.InputField), 101, null, null, null, null);
+			return new SupportedTypeData(typeof(UnityEngine.UI.InputField), 101);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeImage() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Image), 102, null, null, null, null, false);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Image), 102).SetRequireClearOnRecycle(false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeRawImage() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.RawImage), 102, null, null, null, null, false);
+			return new SupportedTypeData(typeof(UnityEngine.UI.RawImage), 102).SetRequireClearOnRecycle(false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeCanvas() {
-			return new SupportedTypeData(typeof(Canvas), 110, null, null, null, null);
+			return new SupportedTypeData(typeof(Canvas), 110);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeCanvasGroup() {
-			return new SupportedTypeData(typeof(CanvasGroup), 110, null, null, null, null);
+			return new SupportedTypeData(typeof(CanvasGroup), 110);
 		}
 
 		private static Dictionary<int, SupportedTypeData> supported_type_datas;
@@ -131,7 +131,7 @@ namespace GreatClock.Common.SerializeTools {
 								variableName = td.type.Name;
 								variableName = variableName.Substring(0, 1).ToLower() + variableName.Substring(1);
 							}
-							td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName, td.requireClearOnRecycle);
+							td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName, td.requireClearOnRecycle, td.abortChild);
 							supported_type_datas.Add(td.type.GetHashCode(), td);
 						}
 					}
@@ -263,49 +263,56 @@ namespace GreatClock.Common.SerializeTools {
 			while (trans.Count > 0) {
 				Transform t = trans.Pop();
 				string name = t.name;
+				bool abort = name.StartsWith("~");
+				if (abort) { name = name.Substring(1); }
 				bool isItem = t != root && name.StartsWith("i_");
-				if (!isItem) {
+				while (true) {
+					ObjectComponents ocs = null;
+					if (t == root) {
+						ocs = new ObjectComponents(t.gameObject, "Self", null, null, null);
+						components.Add(ocs);
+						if (ocs.AbortChild) { abort = true; }
+						break;
+					}
+					if (!isItem && !name.StartsWith("m_")) { break; }
+					name = name.Substring(2, name.Length - 2);
+					string varName = name;
+					string typeName = null;
+					string typeVarName = null;
+					if (isItem) {
+						typeName = string.Concat(cls, "_", name);
+						typeVarName = name;
+						int ivv = name.IndexOf("||");
+						if (ivv >= 0) {
+							varName = name.Substring(0, ivv);
+							typeName = name.Substring(ivv + 2, name.Length - ivv - 2);
+							typeVarName = typeName;
+						} else {
+							int iv = name.IndexOf('|');
+							if (iv >= 0) {
+								varName = name.Substring(0, iv);
+								typeVarName = name.Substring(iv + 1, name.Length - iv - 1);
+								typeName = string.Concat(cls, "_", typeVarName);
+							}
+						}
+						if (!MatchVariableName(typeName)) { break; }
+					}
+					if (!MatchVariableName(varName)) { break; }
+					if (isItem) {
+						ocs = CollectComponents(t, varName, typeName, typeVarName);
+					}
+					if (ocs == null) {
+						ocs = new ObjectComponents(t.gameObject, varName, null, null, null);
+						if (ocs.AbortChild) { abort = true; }
+					}
+					components.Add(ocs);
+					break;
+				}
+				if (!isItem && !abort) {
 					for (int i = t.childCount - 1; i >= 0; i--) {
 						trans.Push(t.GetChild(i));
 					}
 				}
-				if (t == root) {
-					components.Add(new ObjectComponents(t.gameObject, "Self", null, null, null));
-					continue;
-				}
-				if (!isItem && !name.StartsWith("m_")) { continue; }
-				bool inAnotherPrefab = PrefabUtility.GetOutermostPrefabInstanceRoot(t.gameObject) != null;
-				name = name.Substring(2, name.Length - 2);
-				string varName = name;
-				string typeName = null;
-				string typeVarName = null;
-				if (isItem && !inAnotherPrefab) {
-					typeName = string.Concat(cls, "_", name);
-					typeVarName = name;
-					int ivv = name.IndexOf("||");
-					if (ivv >= 0) {
-						varName = name.Substring(0, ivv);
-						typeName = name.Substring(ivv + 2, name.Length - ivv - 2);
-						typeVarName = typeName;
-					} else {
-						int iv = name.IndexOf('|');
-						if (iv >= 0) {
-							varName = name.Substring(0, iv);
-							typeVarName = name.Substring(iv + 1, name.Length - iv - 1);
-							typeName = string.Concat(cls, "_", typeVarName);
-						}
-					}
-					if (!MatchVariableName(typeName)) { continue; }
-				}
-				if (!MatchVariableName(varName)) { continue; }
-				ObjectComponents ocs = null;
-				if (isItem && !inAnotherPrefab) {
-					ocs = CollectComponents(t, varName, typeName, typeVarName);
-				}
-				if (ocs == null) {
-					ocs = new ObjectComponents(t.gameObject, varName, null, null, null);
-				}
-				components.Add(ocs);
 			}
 			return new ObjectComponents(root.gameObject, rootName, cls, clsVar, components);
 		}
@@ -1024,7 +1031,7 @@ namespace GreatClock.Common.SerializeTools {
 						}
 					}
 					if (itemClass != null) {
-						field.components.Add(new SupportedTypeData(null, 10000, oc.cls, null, oc.cls, oc.clsVar));
+						field.components.Add(new SupportedTypeData(null, 10000, oc.cls, null, oc.cls, oc.clsVar, true, false));
 						field.itemType = oc.cls;
 						field.itemVar = oc.clsVar;
 					}
@@ -1064,13 +1071,13 @@ namespace GreatClock.Common.SerializeTools {
 					if (field.itemClass == null) {
 						string[] clearCalls = typeData.GetClearCalls();
 						if (clearCalls != null && clearCalls.Length > 0) {
-							string objstr = field.name + "." + typeData.variableName + ".";
+							string objstr = field.name + "." + typeData.variableName + "?.";
 							foreach (string cc in clearCalls) {
 								clearInvokes.Add(objstr + cc);
 							}
 						}
 					} else if (typeData.type == null && field.itemClass.HasClear()) {
-						string objstr = field.name + "." + typeData.variableName + ".";
+						string objstr = field.name + "." + typeData.variableName + "?.";
 						clearInvokes.Add(objstr + "Clear()");
 					}
 				}
@@ -1268,6 +1275,7 @@ namespace GreatClock.Common.SerializeTools {
 			public readonly string clsVar;
 			public readonly List<ObjectComponents> itemComponents;
 			public int Count { get { return mComponents.Count; } }
+			public bool AbortChild { get; private set; }
 			public int baseClassIndex;
 			public string baseClass = "MonoBehaviour";
 			public bool partialClass;
@@ -1282,10 +1290,12 @@ namespace GreatClock.Common.SerializeTools {
 				this.cls = cls;
 				this.clsVar = clsVar;
 				this.itemComponents = itemComponents;
+				AbortChild = false;
 				temp_components.Clear();
 				go.GetComponents<Component>(temp_components);
 				for (int i = 0, imax = temp_components.Count; i < imax; i++) {
 					Component component = temp_components[i];
+					if (component == null || component.Equals(null)) { continue; }
 					if (itemComponents != null && !(component is Transform)) { continue; }
 					SupportedTypeData std = GetSupportedTypeData(component.GetType());
 					if (std == null) { continue; }
@@ -1293,6 +1303,7 @@ namespace GreatClock.Common.SerializeTools {
 					data.type = std;
 					data.component = component;
 					mComponents.Add(data);
+					if (std.abortChild) { AbortChild = true; }
 				}
 				temp_components.Clear();
 			}

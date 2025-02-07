@@ -12,15 +12,18 @@ namespace GreatClock.Common.SerializeTools {
 
 	public class SupportedTypeData {
 
-		public readonly Type type;
-		public readonly int priority;
-		public readonly string showName;
-		public readonly string nameSpace;
-		public readonly string codeTypeName;
-		public readonly string variableName;
-		public readonly bool requireClearOnRecycle;
+		public Type type { get; private set; }
+		public int priority { get; private set; }
+		public string showName { get; private set; }
+		public string nameSpace { get; private set; }
+		public string codeTypeName { get; private set; }
+		public string variableName { get; private set; }
+		public bool requireClearOnRecycle { get; private set; }
+		public bool abortChild { get; private set; }
 
-		public SupportedTypeData(Type type, int priority, string showName, string nameSpace, string codeTypeName, string variableName, bool requireClearOnRecycle = true) {
+		public SupportedTypeData(Type type, int priority,
+			string showName, string nameSpace, string codeTypeName, string variableName,
+			bool requireClearOnRecycle, bool abortChild) {
 			this.type = type;
 			this.priority = priority;
 			this.showName = showName;
@@ -28,6 +31,48 @@ namespace GreatClock.Common.SerializeTools {
 			this.codeTypeName = codeTypeName;
 			this.variableName = variableName;
 			this.requireClearOnRecycle = requireClearOnRecycle;
+			this.abortChild = abortChild;
+		}
+
+		public SupportedTypeData(Type type, int priority) {
+			this.type = type;
+			this.priority = priority;
+			showName = null;
+			nameSpace = null;
+			codeTypeName = null;
+			variableName = null;
+			requireClearOnRecycle = true;
+			abortChild = false;
+		}
+
+		public SupportedTypeData SetShowName(string showName) {
+			this.showName = showName;
+			return this;
+		}
+
+		public SupportedTypeData SetNameSpace(string nameSpace) {
+			this.nameSpace = nameSpace;
+			return this;
+		}
+
+		public SupportedTypeData SetCodeTypeName(string codeTypeName) {
+			this.codeTypeName = codeTypeName;
+			return this;
+		}
+
+		public SupportedTypeData SetVariableName(string variableName) {
+			this.variableName = variableName;
+			return this;
+		}
+
+		public SupportedTypeData SetRequireClearOnRecycle(bool requireClearOnRecycle) {
+			this.requireClearOnRecycle = requireClearOnRecycle;
+			return this;
+		}
+
+		public SupportedTypeData SetAbortChild(bool abortChild) {
+			this.abortChild = abortChild;
+			return this;
 		}
 
 		private string[] mClearCalls = null;
