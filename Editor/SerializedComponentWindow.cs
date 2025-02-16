@@ -412,6 +412,7 @@ namespace GreatClock.Common.SerializeTools {
 			ResetNameSpaceList();
 			ResetBaseClassList();
 			mFolder = EditorPrefs.GetString(GetKey("prev_folder"), "Assets");
+			mFolderIndex = -1;
 			mDefaultPartialClass = EditorPrefs.GetBool(GetKey("partial_class"), false);
 			mDefaultPublicProperty = EditorPrefs.GetBool(GetKey("public_property"), true);
 			mDefaultPartialItemClass = EditorPrefs.GetBool(GetKey("partial_item_class"), false);
@@ -459,8 +460,8 @@ namespace GreatClock.Common.SerializeTools {
 				if (mObj != null) {
 					mRootComponents = CollectComponents(mObj.transform, mObj.name, mObj.name, null);
 					if (mRootComponents != null) {
-						string folder = mFolderList[mFolderIndex].Replace('\\', '/');
-						if (!folder.EndsWith("/")) { folder = folder + "/"; }
+						string folder = mFolderIndex < 0 ? null : mFolderList[mFolderIndex].Replace('\\', '/');
+						if (!string.IsNullOrEmpty(folder) && !folder.EndsWith("/")) { folder = folder + "/"; }
 						Stack<ObjectComponentsWithIndent> componentsStack = new Stack<ObjectComponentsWithIndent>();
 						List<string> folders = new List<string>();
 						string[] scripts = AssetDatabase.FindAssets("t:MonoScript");
@@ -471,7 +472,7 @@ namespace GreatClock.Common.SerializeTools {
 							folders.Add(scriptPath.Substring(0, scriptPath.Length - mRootComponents.cls.Length - 3));
 						}
 						SortedList<int, KeyValuePair<string, string>> sortedFolders = new SortedList<int, KeyValuePair<string, string>>();
-						if (!folders.Contains(folder)) { folders.Add(folder); }
+						if (!string.IsNullOrEmpty(folder) && !folders.Contains(folder)) { folders.Add(folder); }
 						for (int fi = folders.Count - 1; fi >= 0; fi--) {
 							string f = folders[fi];
 							string prevNS = null;
@@ -569,6 +570,7 @@ namespace GreatClock.Common.SerializeTools {
 							}
 							break;
 						}
+						if (mFolderIndex < 0) { ResetFolderIndex(); }
 					}
 				}
 			}
