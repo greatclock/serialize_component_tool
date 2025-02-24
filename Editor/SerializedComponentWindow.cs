@@ -406,8 +406,6 @@ namespace GreatClock.Common.SerializeTools {
 
 		private Vector2 mScroll;
 
-		private bool mForceUpdate = false;
-
 		void OnEnable() {
 			ResetNameSpaceList();
 			ResetBaseClassList();
@@ -428,19 +426,7 @@ namespace GreatClock.Common.SerializeTools {
 		}
 
 		void OnFocus() {
-			List<string> folders = new List<string>();
-			Queue<string> toCheckFolders = new Queue<string>();
-			toCheckFolders.Enqueue("Assets");
-			while (toCheckFolders.Count > 0) {
-				string folder = toCheckFolders.Dequeue();
-				folders.Add(folder);
-				string[] subFolders = AssetDatabase.GetSubFolders(folder);
-				for (int i = 0, imax = subFolders.Length; i < imax; i++) {
-					toCheckFolders.Enqueue(subFolders[i].Replace('\\', '/'));
-				}
-			}
-			mFolderList = folders.ToArray();
-			mForceUpdate = true;
+			ResetFolderList();
 		}
 
 		void OnGUI() {
@@ -453,9 +439,8 @@ namespace GreatClock.Common.SerializeTools {
 			EditorGUILayout.BeginHorizontal();
 			mObj = EditorGUILayout.ObjectField("Game Object", mObj, typeof(GameObject), true) as GameObject;
 			EditorGUILayout.EndHorizontal();
-			if (mObj != mPrevObj || mForceUpdate) {
+			if (mObj != mPrevObj) {
 				mPrevObj = mObj;
-				mForceUpdate = false;
 				mDrawingComponents.Clear();
 				if (mObj != null) {
 					mRootComponents = CollectComponents(mObj.transform, mObj.name, mObj.name, null);
@@ -587,22 +572,24 @@ namespace GreatClock.Common.SerializeTools {
 				mFolderIndex = EditorGUILayout.Popup(mFolderIndex, mFolderList);
 				mFolder = mFolderList[mFolderIndex];
 			}
+			bool flagFolder = false;
 			if (GUILayout.Button(mFolderManualEdit ? s_content_select : s_content_manual, s_layout_width_2)) {
 				mFolderManualEdit = !mFolderManualEdit;
-				if (!mFolderManualEdit) {
-					ResetFolderIndex();
-				}
+				flagFolder = !mFolderManualEdit;
 			}
 			if (GUILayout.Button(s_content_browse, s_layout_width_2)) {
 				string folder = EditorUtility.SaveFolderPanel(s_string_select_code_folder, mFolder, "");
 				if (!string.IsNullOrEmpty(folder)) {
 					if (folder.StartsWith(Application.dataPath)) {
 						mFolder = folder.Substring(Application.dataPath.Length - 6);
-						if (!mFolderManualEdit) {
-							ResetFolderIndex();
-						}
+						flagFolder = !mFolderManualEdit;
 					}
 				}
+			}
+			if (flagFolder && !ResetFolderIndex()) {
+				AssetDatabase.Refresh();
+				ResetFolderList();
+				ResetFolderIndex();
 			}
 			EditorGUILayout.EndHorizontal();
 			#endregion
@@ -886,14 +873,30 @@ namespace GreatClock.Common.SerializeTools {
 			return ret;
 		}
 
-		private void ResetFolderIndex() {
+		private void ResetFolderList() {
+			List<string> folders = new List<string>();
+			Queue<string> toCheckFolders = new Queue<string>();
+			toCheckFolders.Enqueue("Assets");
+			while (toCheckFolders.Count > 0) {
+				string folder = toCheckFolders.Dequeue();
+				folders.Add(folder);
+				string[] subFolders = AssetDatabase.GetSubFolders(folder);
+				for (int i = 0, imax = subFolders.Length; i < imax; i++) {
+					toCheckFolders.Enqueue(subFolders[i].Replace('\\', '/'));
+				}
+			}
+			mFolderList = folders.ToArray();
+		}
+
+		private bool ResetFolderIndex() {
 			mFolderIndex = 0;
 			for (int i = mFolderList.Length - 1; i >= 0; i--) {
 				if (mFolder == mFolderList[i]) {
 					mFolderIndex = i;
-					break;
+					return true;
 				}
 			}
+			return false;
 		}
 
 		private List<CodeObject> GetCodes(string ns) {
