@@ -384,6 +384,7 @@ namespace GreatClock.Common.SerializeTools {
 		private string[] mFolderList;
 		private int mFolderIndex;
 		private string mFolder;
+		private bool mForceRecollect = false;
 
 		private List<string> mUsedNameSpaces = new List<string>();
 		private bool mNameSpaceManualEdit = false;
@@ -426,7 +427,9 @@ namespace GreatClock.Common.SerializeTools {
 		}
 
 		void OnFocus() {
+			mForceRecollect = true;
 			ResetFolderList();
+			ResetFolderIndex();
 		}
 
 		void OnGUI() {
@@ -439,7 +442,10 @@ namespace GreatClock.Common.SerializeTools {
 			EditorGUILayout.BeginHorizontal();
 			mObj = EditorGUILayout.ObjectField("Game Object", mObj, typeof(GameObject), true) as GameObject;
 			EditorGUILayout.EndHorizontal();
-			if (mObj != mPrevObj) {
+			bool resetFolder = mObj != mPrevObj;
+			bool recollect = mForceRecollect;
+			mForceRecollect = false;
+			if (resetFolder || recollect) {
 				mPrevObj = mObj;
 				mDrawingComponents.Clear();
 				if (mObj != null) {
@@ -507,8 +513,10 @@ namespace GreatClock.Common.SerializeTools {
 								}
 							}
 							if (index < 0) { continue; }
-							mFolderIndex = index;
-							mFolder = mFolderList[mFolderIndex];
+							if (resetFolder) {
+								mFolderIndex = index;
+								mFolder = mFolderList[mFolderIndex];
+							}
 							if (prevNS == null) { prevNS = ""; }
 							mNameSpaceIndex = mUsedNameSpaces.IndexOf(prevNS);
 							if (mNameSpaceIndex < 0) {
