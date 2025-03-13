@@ -269,7 +269,7 @@ namespace GreatClock.Common.SerializeTools {
 				while (true) {
 					ObjectComponents ocs = null;
 					if (t == root) {
-						ocs = new ObjectComponents(t.gameObject, "Self", null, null, null);
+						ocs = new ObjectComponents(t.gameObject, true, "Self", null, null, null);
 						components.Add(ocs);
 						if (ocs.AbortChild) { abort = true; }
 						break;
@@ -302,7 +302,7 @@ namespace GreatClock.Common.SerializeTools {
 						ocs = CollectComponents(t, varName, typeName, typeVarName);
 					}
 					if (ocs == null) {
-						ocs = new ObjectComponents(t.gameObject, varName, null, null, null);
+						ocs = new ObjectComponents(t.gameObject, false, varName, null, null, null);
 						if (ocs.AbortChild) { abort = true; }
 					}
 					components.Add(ocs);
@@ -314,7 +314,7 @@ namespace GreatClock.Common.SerializeTools {
 					}
 				}
 			}
-			return new ObjectComponents(root.gameObject, rootName, cls, clsVar, components);
+			return new ObjectComponents(root.gameObject, true, rootName, cls, clsVar, components);
 		}
 
 		#endregion
@@ -1297,7 +1297,7 @@ namespace GreatClock.Common.SerializeTools {
 			public ComponentData this[int i] {
 				get { return mComponents[i]; }
 			}
-			public ObjectComponents(GameObject go, string name, string cls, string clsVar, List<ObjectComponents> itemComponents) {
+			public ObjectComponents(GameObject go, bool isroot, string name, string cls, string clsVar, List<ObjectComponents> itemComponents) {
 				this.go = go;
 				this.name = name;
 				this.cls = cls;
@@ -1316,7 +1316,7 @@ namespace GreatClock.Common.SerializeTools {
 					data.type = std;
 					data.component = component;
 					mComponents.Add(data);
-					if (std.abortChild) { AbortChild = true; }
+					if (std.abortChild && !isroot) { AbortChild = true; }
 				}
 				temp_components.Clear();
 			}
