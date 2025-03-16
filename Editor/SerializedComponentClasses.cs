@@ -18,19 +18,19 @@ namespace GreatClock.Common.SerializeTools {
 		public string nameSpace { get; private set; }
 		public string codeTypeName { get; private set; }
 		public string variableName { get; private set; }
-		public bool requireClearOnRecycle { get; private set; }
+		public bool clearEventsOnRecycle { get; private set; }
 		public bool abortChild { get; private set; }
 
 		public SupportedTypeData(Type type, int priority,
 			string showName, string nameSpace, string codeTypeName, string variableName,
-			bool requireClearOnRecycle, bool abortChild) {
+			bool clearEventsOnRecycle, bool abortChild) {
 			this.type = type;
 			this.priority = priority;
 			this.showName = showName;
 			this.nameSpace = nameSpace;
 			this.codeTypeName = codeTypeName;
 			this.variableName = variableName;
-			this.requireClearOnRecycle = requireClearOnRecycle;
+			this.clearEventsOnRecycle = clearEventsOnRecycle;
 			this.abortChild = abortChild;
 		}
 
@@ -41,7 +41,7 @@ namespace GreatClock.Common.SerializeTools {
 			nameSpace = null;
 			codeTypeName = null;
 			variableName = null;
-			requireClearOnRecycle = true;
+			clearEventsOnRecycle = true;
 			abortChild = false;
 		}
 
@@ -66,7 +66,7 @@ namespace GreatClock.Common.SerializeTools {
 		}
 
 		public SupportedTypeData SetRequireClearOnRecycle(bool requireClearOnRecycle) {
-			this.requireClearOnRecycle = requireClearOnRecycle;
+			this.clearEventsOnRecycle = requireClearOnRecycle;
 			return this;
 		}
 
@@ -75,21 +75,47 @@ namespace GreatClock.Common.SerializeTools {
 			return this;
 		}
 
+		private int mHasOpen = 0;
+		public bool HasOpen() {
+			if (mHasOpen == 0) {
+				mHasOpen = -1;
+				BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
+				foreach (MethodInfo mi in type.GetMethods(flags)) {
+					if (mi.Name != "Open") { continue; }
+					if (mi.ContainsGenericParameters) { continue; }
+					if (mi.GetParameters().Length > 0) { continue; }
+					if (mi.ReturnType != s_type_void) { continue; }
+					mHasOpen = 1;
+					break;
+				}
+			}
+			return mHasOpen > 0;
+		}
+
+		private int mHasClear = 0;
+		public bool HasClear() {
+			if (mHasClear == 0) {
+				mHasClear = -1;
+				BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
+				foreach (MethodInfo mi in type.GetMethods(flags)) {
+					if (mi.Name != "Clear") { continue; }
+					if (mi.ContainsGenericParameters) { continue; }
+					if (mi.GetParameters().Length > 0) { continue; }
+					if (mi.ReturnType != s_type_void) { continue; }
+					mHasClear = 1;
+					break;
+				}
+			}
+			return mHasClear > 0;
+		}
+
 		private string[] mClearCalls = null;
 		public string[] GetClearCalls() {
 			if (mClearCalls == null) {
 				s_temp_strings.Clear();
-				if (requireClearOnRecycle) {
+				if (clearEventsOnRecycle) {
 					BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
-					bool hasClear = false;
 					foreach (MemberInfo member in type.GetMembers(flags)) {
-						MethodInfo mi = member as MethodInfo;
-						if (mi != null) {
-							if (mi.Name == "Clear" && mi.GetParameters().Length <= 0 && mi.ReturnType == s_type_void) {
-								hasClear = true;
-							}
-							continue;
-						}
 						Type fieldType = null;
 						PropertyInfo pi = member as PropertyInfo;
 						FieldInfo fi = member as FieldInfo;
@@ -99,9 +125,9 @@ namespace GreatClock.Common.SerializeTools {
 						if (member.GetCustomAttribute<ObsoleteAttribute>() != null) { continue; }
 						s_temp_strings.Add(string.Format("{0}.RemoveAllListeners()", member.Name));
 					}
-					s_temp_strings.Sort();
-					if (hasClear) { s_temp_strings.Add("Clear()"); }
 				}
+				if (HasClear()) { s_temp_strings.Add("Clear()"); }
+				s_temp_strings.Sort();
 				mClearCalls = s_temp_strings.ToArray();
 				s_temp_strings.Clear();
 			}
