@@ -88,18 +88,19 @@ namespace GreatClock.Common.SerializeTools {
 			return new SupportedTypeData(typeof(CanvasGroup), 110);
 		}
 
-		private static Dictionary<int, SupportedTypeData> supported_type_datas;
+		private static Dictionary<Type, SupportedTypeData> supported_type_datas;
 
 		private static SupportedTypeData GetSupportedTypeData(Type type) {
 			if (type == null) { return null; }
-			if (supported_type_datas == null) { supported_type_datas = new Dictionary<int, SupportedTypeData>(); }
+			if (supported_type_datas == null) { supported_type_datas = new Dictionary<Type, SupportedTypeData>(); }
 			if (supported_type_datas.Count <= 0) {
 				Type tComponent = typeof(Component);
 				Type attr = typeof(SupportedComponentTypeAttribute);
 				Type dele = typeof(DefineSupportedTypeDelegate);
 				Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
 				for (int i = 0, imax = assemblies.Length; i < imax; i++) {
-					Type[] types = assemblies[i].GetTypes();
+					Assembly assembly = assemblies[i];
+					Type[] types = assembly.GetTypes();
 					for (int j = 0, jmax = types.Length; j < jmax; j++) {
 						Type tt = types[j];
 						MethodInfo[] methods = tt.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
@@ -131,14 +132,24 @@ namespace GreatClock.Common.SerializeTools {
 								variableName = td.type.Name;
 								variableName = variableName.Substring(0, 1).ToLower() + variableName.Substring(1);
 							}
-							td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName, td.clearEventsOnRecycle, td.abortChild);
-							supported_type_datas.Add(td.type.GetHashCode(), td);
+							bool add = true;
+							if (supported_type_datas.ContainsKey(td.type)) {
+								if (assembly == attr.Assembly) {
+									add = false;
+								} else {
+									supported_type_datas.Remove(td.type);
+								}
+							}
+							if (add) {
+								td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName, td.clearEventsOnRecycle, td.abortChild);
+								supported_type_datas.Add(td.type, td);
+							}
 						}
 					}
 				}
 			}
 			SupportedTypeData data;
-			return supported_type_datas.TryGetValue(type.GetHashCode(), out data) ? data : null;
+			return supported_type_datas.TryGetValue(type, out data) ? data : null;
 		}
 
 		private static int SortSupportedTypeDatas(SupportedTypeData l, SupportedTypeData r) {
