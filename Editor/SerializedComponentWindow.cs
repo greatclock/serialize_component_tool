@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -261,6 +261,8 @@ namespace GreatClock.Common.SerializeTools {
 		#region core api
 
 		private static List<Component> temp_components = new List<Component>();
+		private static Dictionary<Type, SupportedTypeData> temp_types = new Dictionary<Type, SupportedTypeData>();
+		private static List<ObjectComponents> temp_ocs = new List<ObjectComponents>();
 
 		private static Regex variable_regex = new Regex(@"^[_a-zA-Z][_0-9a-zA-Z]*$");
 		private static bool MatchVariableName(string name) {
@@ -268,9 +270,21 @@ namespace GreatClock.Common.SerializeTools {
 			return variable_regex.IsMatch(name);
 		}
 
-		private static ObjectComponents CollectComponents(Transform root, string rootName, string cls, string clsVar) {
+		private static string ParseNameArray(string s, out int index) {
+			Match match = Regex.Match(s, @".+(\[(\d*)\]).*");
+			if (!match.Success) { index = -2; return s; }
+			var gc = match.Groups[1];
+			var gi = match.Groups[2];
+			index = -1;
+			if (gi.Success) {
+				if (!int.TryParse(gi.Value, out index)) { index = -1; }
+			}
+			return s.Substring(0, gc.Index) + s.Substring(gc.Index + gc.Length);
+		}
+
+		private static ObjectComponents CollectComponents(Transform root, string cls) {
 			if (root == null) { return null; }
-			List<ObjectComponents> components = new List<ObjectComponents>();
+			List<FieldObject> components = new List<FieldObject>();
 			List<ActiveGameObject> activeObjects = new List<ActiveGameObject>();
 			Stack<Transform> trans = new Stack<Transform>(64);
 			trans.Push(root);
@@ -281,11 +295,11 @@ namespace GreatClock.Common.SerializeTools {
 				if (abort) { name = name.Substring(1); }
 				bool isItem = t != root && name.StartsWith("i_");
 				while (true) {
-					ObjectComponents ocs = null;
+					FieldObject fo = null;
 					if (t == root) {
-						ocs = ObjectComponents.GetForField(t.gameObject, true, "Self");
-						components.Add(ocs);
-						if (ocs.abortChild) { abort = true; }
+						fo = FieldObject.GetForField("Self", new ObjectComponents(t.gameObject, true, true, null, null));
+						components.Add(fo);
+						if (fo.abortChild) { abort = true; }
 						break;
 					}
 					bool isMember = false;
@@ -297,7 +311,9 @@ namespace GreatClock.Common.SerializeTools {
 						isActiveNode = name.StartsWith("a_");
 					}
 					if (!isItem && !isMember && !isOpenNode && !isActiveNode) { break; }
-					name = name.Substring(2, name.Length - 2);
+					int ai;
+					name = ParseNameArray(name.Substring(2, name.Length - 2), out ai);
+					if (isOpenNode && ai >= -1) { break; }
 					string varName = name;
 					string typeName = null;
 					string typeVarName = null;
@@ -321,8 +337,8 @@ namespace GreatClock.Common.SerializeTools {
 					}
 					if (!MatchVariableName(varName)) { break; }
 					if (isOpenNode) {
-						ocs = ObjectComponents.GetForOpenClear(t.gameObject, varName);
-						if (ocs != null) { components.Add(ocs); }
+						fo = FieldObject.GetForOpenClear(t.gameObject, varName);
+						if (fo != null) { components.Add(fo); }
 						break;
 					}
 					if (isActiveNode) {
@@ -330,13 +346,28 @@ namespace GreatClock.Common.SerializeTools {
 						break;
 					}
 					if (isItem) {
-						ocs = CollectComponents(t, varName, typeName, typeVarName);
+						ObjectComponents ocs = CollectComponents(t, typeName);
+						if (ai < -1) {
+							fo = FieldObject.GetForContainer(varName, ocs, typeName, typeVarName);
+							components.Add(fo);
+						} else {
+							ocs.Index = ai;
+							fo = GetContainerFrom(components, varName, typeName, typeVarName);
+							fo.gos.Add(ocs);
+						}
 					}
-					if (ocs == null) {
-						ocs = ObjectComponents.GetForField(t.gameObject, false, varName);
-						if (ocs.abortChild) { abort = true; }
+					if (fo == null) {
+						if (ai < -1) {
+							fo = FieldObject.GetForField(varName, new ObjectComponents(t.gameObject, false, true, null, null));
+							components.Add(fo);
+						} else {
+							fo = GetFieldFrom(components, varName);
+							ObjectComponents ocs = new ObjectComponents(t.gameObject, false, true, null, null);
+							ocs.Index = ai;
+							fo.gos.Add(ocs);
+						}
+						if (fo.abortChild) { abort = true; }
 					}
-					components.Add(ocs);
 					break;
 				}
 				if (!isItem && !abort) {
@@ -345,7 +376,25 @@ namespace GreatClock.Common.SerializeTools {
 					}
 				}
 			}
-			return ObjectComponents.GetForContainer(root.gameObject, true, rootName, cls, clsVar, components, activeObjects);
+			return new ObjectComponents(root.gameObject, true, true, components, activeObjects);
+		}
+
+		private static FieldObject GetFieldFrom(List<FieldObject> fos, string name) {
+			for (int i = fos.Count - 1; i >= 0; i--) {
+				if (fos[i].name == name) { return fos[i]; }
+			}
+			FieldObject fo = FieldObject.GetForField(name);
+			fos.Add(fo);
+			return fo;
+		}
+
+		private static FieldObject GetContainerFrom(List<FieldObject> fos, string name, string cls, string clsVar) {
+			for (int i = fos.Count - 1; i >= 0; i--) {
+				if (fos[i].name == name) { return fos[i]; }
+			}
+			FieldObject fo = FieldObject.GetForContainer(name, cls, clsVar);
+			fos.Add(fo);
+			return fo;
 		}
 
 		#endregion
@@ -408,8 +457,8 @@ namespace GreatClock.Common.SerializeTools {
 
 		private GameObject mObj;
 		private GameObject mPrevObj;
-		private ObjectComponents mRootComponents = null;
-		private List<ObjectComponentsWithIndent> mDrawingComponents = new List<ObjectComponentsWithIndent>();
+		private FieldObject mRootFieldObject = null;
+		private List<FieldObjectWithIndent> mDrawingComponents = new List<FieldObjectWithIndent>();
 
 		private bool mFolderManualEdit = false;
 		private string[] mFolderList;
@@ -480,18 +529,19 @@ namespace GreatClock.Common.SerializeTools {
 				mPrevObj = mObj;
 				mDrawingComponents.Clear();
 				if (mObj != null) {
-					mRootComponents = CollectComponents(mObj.transform, mObj.name, mObj.name, null);
-					if (mRootComponents != null) {
+					var ocs = CollectComponents(mObj.transform, mObj.name);
+					mRootFieldObject = FieldObject.GetForContainer(mObj.name, ocs, mObj.name, null);
+					if (mRootFieldObject != null) {
 						string folder = mFolderIndex < 0 ? null : mFolderList[mFolderIndex].Replace('\\', '/');
 						if (!string.IsNullOrEmpty(folder) && !folder.EndsWith("/")) { folder = folder + "/"; }
-						Stack<ObjectComponentsWithIndent> componentsStack = new Stack<ObjectComponentsWithIndent>();
+						Stack<FieldObjectWithIndent> componentsStack = new Stack<FieldObjectWithIndent>();
 						List<string> folders = new List<string>();
 						string[] scripts = AssetDatabase.FindAssets("t:MonoScript");
-						string pathTpl = "/" + mRootComponents.cls + ".cs";
+						string pathTpl = "/" + mRootFieldObject.cls + ".cs";
 						for (int i = 0, imax = scripts.Length; i < imax; i++) {
 							string scriptPath = AssetDatabase.GUIDToAssetPath(scripts[i]);
 							if (!scriptPath.EndsWith(pathTpl)) { continue; }
-							folders.Add(scriptPath.Substring(0, scriptPath.Length - mRootComponents.cls.Length - 3));
+							folders.Add(scriptPath.Substring(0, scriptPath.Length - mRootFieldObject.cls.Length - 3));
 						}
 						SortedList<int, KeyValuePair<string, string>> sortedFolders = new SortedList<int, KeyValuePair<string, string>>();
 						if (!string.IsNullOrEmpty(folder) && !folders.Contains(folder)) { folders.Add(folder); }
@@ -499,28 +549,35 @@ namespace GreatClock.Common.SerializeTools {
 							string f = folders[fi];
 							string prevNS = null;
 							int score = f == folder ? 10 : 0;
-							ObjectComponentsWithIndent ocwi = new ObjectComponentsWithIndent();
-							ocwi.indent = 0;
-							ocwi.components = mRootComponents;
-							componentsStack.Push(ocwi);
+							FieldObjectWithIndent fowi = new FieldObjectWithIndent();
+							fowi.indent = 0;
+							fowi.fieldobject = mRootFieldObject;
+							componentsStack.Push(fowi);
 							while (componentsStack.Count > 0) {
-								ocwi = componentsStack.Pop();
-								List<ObjectComponents> ocsList = ocwi.components.itemComponents;
-								if (ocsList != null) {
-									for (int i = ocsList.Count - 1; i >= 0; i--) {
-										ObjectComponentsWithIndent nocwi = new ObjectComponentsWithIndent();
-										nocwi.indent = ocwi.indent + 1;
-										nocwi.components = ocsList[i];
-										componentsStack.Push(nocwi);
+								fowi = componentsStack.Pop();
+								if (fowi.fieldobject.isArray) {
+
+
+								} else {
+
+								}
+								foreach (ObjectComponents iocs in fowi.fieldobject.gos) {
+									List<FieldObject> foList = iocs.itemFields;
+									if (foList == null) { continue; }
+									for (int i = foList.Count - 1; i >= 0; i--) {
+										FieldObjectWithIndent nfowi = new FieldObjectWithIndent();
+										nfowi.indent = fowi.indent + 1;
+										nfowi.fieldobject = foList[i];
+										componentsStack.Push(nfowi);
 									}
 								}
 								CodeProperties cp = null;
-								if (!string.IsNullOrEmpty(ocwi.components.cls)) {
-									cp = CheckCodeAtPath(string.Concat(f, ocwi.components.cls, ".cs"));
+								if (!string.IsNullOrEmpty(fowi.fieldobject.cls)) {
+									cp = CheckCodeAtPath(string.Concat(f, fowi.fieldobject.cls, ".cs"));
 								}
-								if (cp != null && cp.className == ocwi.components.cls) {
+								if (cp != null && cp.className == fowi.fieldobject.cls) {
 									score += 15;
-									if (ocwi.indent <= 0) {
+									if (fowi.indent <= 0) {
 										prevNS = cp.nameSpace;
 										if (!string.IsNullOrEmpty(prevNS) && prevNS == mNameSpaceList[mNameSpaceIndex]) {
 											score += 100;
@@ -559,36 +616,50 @@ namespace GreatClock.Common.SerializeTools {
 								mNameSpaceList[mNameSpaceList.Length - 1] = "";
 							}
 							mDrawingComponents.Clear();
-							ObjectComponentsWithIndent ocwi = new ObjectComponentsWithIndent();
-							ocwi.indent = 0;
-							ocwi.components = mRootComponents;
-							componentsStack.Push(ocwi);
+							FieldObjectWithIndent fowi = new FieldObjectWithIndent();
+							fowi.indent = 0;
+							fowi.index = 0;
+							fowi.fieldobject = mRootFieldObject;
+							componentsStack.Push(fowi);
 							while (componentsStack.Count > 0) {
-								ocwi = componentsStack.Pop();
-								mDrawingComponents.Add(ocwi);
-								List<ObjectComponents> ocsList = ocwi.components.itemComponents;
-								if (ocsList != null) {
-									for (int i = ocsList.Count - 1; i >= 0; i--) {
-										ObjectComponentsWithIndent nocwi = new ObjectComponentsWithIndent();
-										nocwi.indent = ocwi.indent + 1;
-										nocwi.components = ocsList[i];
-										componentsStack.Push(nocwi);
+								fowi = componentsStack.Pop();
+								mDrawingComponents.Add(fowi);
+								ObjectComponents iocs = fowi.fieldobject.gos[fowi.index];
+								List<FieldObject> foList = iocs.itemFields;
+								if (foList == null) { continue; }
+								for (int i = foList.Count - 1; i >= 0; i--) {
+									FieldObject fo = foList[i];
+									if (fo.isArray) {
+										for (int j = fo.gos.Count - 1; j >= 0; j--) {
+											ObjectComponents iiocs = fo.gos[j];
+											FieldObjectWithIndent nfowi = new FieldObjectWithIndent();
+											nfowi.indent = fowi.indent + 1;
+											nfowi.index = j;
+											nfowi.fieldobject = fo;
+											componentsStack.Push(nfowi);
+										}
+									} else {
+										FieldObjectWithIndent nfowi = new FieldObjectWithIndent();
+										nfowi.indent = fowi.indent + 1;
+										nfowi.index = 0;
+										nfowi.fieldobject = fo;
+										componentsStack.Push(nfowi);
 									}
 								}
-								if (ocwi.indent <= 0) {
-									ocwi.components.partialClass = mDefaultPartialClass;
-									ocwi.components.publicProperty = mDefaultPublicProperty;
+								if (fowi.indent <= 0) {
+									fowi.fieldobject.partialClass = mDefaultPartialClass;
+									fowi.fieldobject.publicProperty = mDefaultPublicProperty;
 								} else {
-									ocwi.components.partialClass = mDefaultPartialItemClass;
-									ocwi.components.publicProperty = mDefaultPublicItemProperty;
+									fowi.fieldobject.partialClass = mDefaultPartialItemClass;
+									fowi.fieldobject.publicProperty = mDefaultPublicItemProperty;
 								}
-								if (!string.IsNullOrEmpty(ocwi.components.cls)) {
-									CodeProperties cp = CheckCodeAtPath(string.Concat(pFolder, ocwi.components.cls, ".cs"));
-									if (cp != null && cp.className == ocwi.components.cls) {
-										ocwi.components.partialClass = cp.partialClass;
-										ocwi.components.publicProperty = cp.publicProperty;
-										ocwi.components.baseClass = cp.baseClass;
-										ocwi.components.baseClassIndex = -1;
+								if (!string.IsNullOrEmpty(fowi.fieldobject.cls)) {
+									CodeProperties cp = CheckCodeAtPath(string.Concat(pFolder, fowi.fieldobject.cls, ".cs"));
+									if (cp != null && cp.className == fowi.fieldobject.cls) {
+										fowi.fieldobject.partialClass = cp.partialClass;
+										fowi.fieldobject.publicProperty = cp.publicProperty;
+										fowi.fieldobject.baseClass = cp.baseClass;
+										fowi.fieldobject.baseClassIndex = -1;
 									}
 								}
 							}
@@ -689,71 +760,78 @@ namespace GreatClock.Common.SerializeTools {
 			EditorGUILayout.BeginHorizontal();
 			GUILayout.Space(4f);
 			EditorGUILayout.BeginVertical();
+			List<ObjectComponents> ocses = new List<ObjectComponents>();
+			int dn = 0;
 			for (int i = 0; i < count; i++) {
+				int indent = mDrawingComponents[i].indent;
+				int index = mDrawingComponents[i].index;
+				FieldObject fo = mDrawingComponents[i].fieldobject;
+				ocses.Clear();
+				fo.SortObjects(ocses);
+				ObjectComponents iocs = fo.gos[index];
 				Color cachedBgColor = GUI.backgroundColor;
-				if ((i & 1) == 0) {
+				if ((dn & 1) == 0) {
 					GUI.backgroundColor = cachedBgColor * 0.8f;
 				}
-				int indent = mDrawingComponents[i].indent;
+				dn++;
 				if (indent > 0) {
 					EditorGUILayout.BeginHorizontal();
 					GUILayout.Space(12f * indent);
 				}
 				EditorGUILayout.BeginVertical(mStyleBox, GUILayout.MinHeight(10f));
 				GUI.backgroundColor = cachedBgColor;
-				ObjectComponents ocs = mDrawingComponents[i].components;
-				int cCount = ocs.Count;
-				EditorGUILayout.LabelField(ocs.name, mStyleBoldLabel);
+				int cCount = iocs.Count;
+				EditorGUILayout.LabelField(fo.isArray ? string.Format("{0}[{1}]", fo.name, ocses.IndexOf(iocs)) : fo.name, mStyleBoldLabel);
 				EditorGUILayout.BeginHorizontal();
 				GUILayout.Space(12f);
 				EditorGUILayout.BeginVertical();
 				for (int j = 0; j < cCount; j++) {
-					ComponentData cd = ocs[j];
+					ComponentData cd = iocs[j];
 					EditorGUILayout.ObjectField(cd.type.showName, cd.component, cd.type.type, true);
 				}
-				if (ocs.itemComponents != null) {
-					ocs.partialClass = EditorGUILayout.Toggle(s_content_partial, ocs.partialClass);
-					ocs.publicProperty = EditorGUILayout.Toggle(s_content_public_property, ocs.publicProperty);
+				if (iocs.itemFields != null) {
+					fo.partialClass = EditorGUILayout.Toggle(s_content_partial, fo.partialClass);
+					fo.publicProperty = EditorGUILayout.Toggle(s_content_public_property, fo.publicProperty);
 					EditorGUILayout.BeginHorizontal();
-					if (ocs.baseClassIndex < 0) {
-						ocs.baseClass = EditorGUILayout.DelayedTextField(s_content_base_class, ocs.baseClass);
+					if (fo.baseClassIndex < 0) {
+						fo.baseClass = EditorGUILayout.DelayedTextField(s_content_base_class, fo.baseClass);
 					} else {
 						EditorGUI.BeginChangeCheck();
-						mBaseClassList[mBaseClassList.Length - 1] = ocs.baseClassIndex >= mBaseClassList.Length - 1 ?
-							ocs.baseClass : "";
-						ocs.baseClassIndex = EditorGUILayout.Popup(s_content_base_class, ocs.baseClassIndex, mBaseClassList);
+						mBaseClassList[mBaseClassList.Length - 1] = fo.baseClassIndex >= mBaseClassList.Length - 1 ?
+							fo.baseClass : "";
+						fo.baseClassIndex = EditorGUILayout.Popup(s_content_base_class, fo.baseClassIndex, mBaseClassList);
 						if (EditorGUI.EndChangeCheck()) {
-							ocs.baseClass = mBaseClassList[ocs.baseClassIndex];
+							fo.baseClass = mBaseClassList[fo.baseClassIndex];
 						}
 					}
-					if (GUILayout.Button(ocs.baseClassIndex < 0 ? s_content_select : s_content_manual, s_layout_width_2)) {
-						if (ocs.baseClassIndex < 0) {
-							ocs.baseClassIndex = mUsedBaseClasss.IndexOf(ocs.baseClass);
-							if (ocs.baseClassIndex < 0) { ocs.baseClassIndex = mUsedBaseClasss.Count; }
+					if (GUILayout.Button(fo.baseClassIndex < 0 ? s_content_select : s_content_manual, s_layout_width_2)) {
+						if (fo.baseClassIndex < 0) {
+							fo.baseClassIndex = mUsedBaseClasss.IndexOf(fo.baseClass);
+							if (fo.baseClassIndex < 0) { fo.baseClassIndex = mUsedBaseClasss.Count; }
 						} else {
-							ocs.baseClassIndex = -1;
+							fo.baseClassIndex = -1;
 						}
 					}
 					if (i == 0 && GUILayout.Button(s_content_delete, s_layout_width_2)) {
-						if (ocs.baseClassIndex < mBaseClassList.Length - 1) {
-							mUsedBaseClasss.RemoveAt(ocs.baseClassIndex);
+						if (fo.baseClassIndex < mBaseClassList.Length - 1) {
+							mUsedBaseClasss.RemoveAt(fo.baseClassIndex);
 							SaveUsedBaseClasses();
 							ResetBaseClassList();
 						}
-						ocs.baseClass = mBaseClassList[ocs.baseClassIndex];
+						fo.baseClass = mBaseClassList[fo.baseClassIndex];
 					}
 					EditorGUILayout.EndHorizontal();
-				}
-				int aon = ocs.activeObjects == null ? 0 : ocs.activeObjects.Count;
-				if (aon > 0) {
-					EditorGUILayout.LabelField("Active GameObjects on Open", mStyleBoldLabel);
-					EditorGUI.indentLevel++;
-					for (int j = 0; j < aon; j++) {
-						ActiveGameObject item = ocs.activeObjects[j];
-						// TODO cache typeof(GameObject)
-						EditorGUILayout.ObjectField(item.name, item.go, typeof(GameObject), true);
+					int aon = iocs.activeObjects == null ? 0 : iocs.activeObjects.Count;
+					if (aon > 0) {
+						EditorGUILayout.LabelField("Active GameObjects on Open", mStyleBoldLabel);
+						EditorGUI.indentLevel++;
+						for (int j = 0; j < aon; j++) {
+							ActiveGameObject item = iocs.activeObjects[j];
+							// TODO cache typeof(GameObject)
+							EditorGUILayout.ObjectField(item.name, item.go, typeof(GameObject), true);
+						}
+						EditorGUI.indentLevel--;
 					}
-					EditorGUI.indentLevel--;
 				}
 				EditorGUILayout.EndVertical();
 				EditorGUILayout.EndHorizontal();
@@ -767,7 +845,7 @@ namespace GreatClock.Common.SerializeTools {
 			EditorGUILayout.EndHorizontal();
 			EditorGUILayout.EndScrollView();
 			EditorGUILayout.BeginHorizontal();
-			EditorGUI.BeginDisabledGroup(mObj == null || mRootComponents == null);
+			EditorGUI.BeginDisabledGroup(mObj == null || mRootFieldObject == null);
 			if (GUILayout.Button(s_content_gen_and_mount, s_layout_width_5)) {
 				EditorPrefs.SetString(GetKey("prev_folder"), mFolder);
 				string folder = mFolder;
@@ -779,9 +857,9 @@ namespace GreatClock.Common.SerializeTools {
 				}
 				bool usedBaseClassesChanged = false;
 				for (int i = 0; i < count; i++) {
-					ObjectComponents ocs = mDrawingComponents[i].components;
-					if (!string.IsNullOrEmpty(ocs.baseClass) && !mUsedBaseClasss.Contains(ocs.baseClass)) {
-						mUsedBaseClasss.Add(ocs.baseClass);
+					FieldObject fo = mDrawingComponents[i].fieldobject;
+					if (!string.IsNullOrEmpty(fo.baseClass) && !mUsedBaseClasss.Contains(fo.baseClass)) {
+						mUsedBaseClasss.Add(fo.baseClass);
 						usedBaseClassesChanged = true;
 					}
 				}
@@ -839,29 +917,33 @@ namespace GreatClock.Common.SerializeTools {
 			EditorGUI.EndDisabledGroup();
 			if (mToSetSerializedObjects) {
 				mToSetSerializedObjects = false;
-				if (SerializeObject(mNameSpaceList[mNameSpaceIndex], mRootComponents)) {
+				if (SerializeObject(mNameSpaceList[mNameSpaceIndex], mRootFieldObject)) {
 					AssetDatabase.SaveAssets();
 				}
 			}
 		}
 
-		private bool SerializeObject(string ns, ObjectComponents ocs) {
-			Queue<ObjectComponents> components = new Queue<ObjectComponents>();
-			components.Enqueue(ocs);
-			Stack<ObjectComponents> sortedComponents = new Stack<ObjectComponents>();
+		private bool SerializeObject(string ns, FieldObject fieldobj) {
+			Queue<FieldObject> components = new Queue<FieldObject>();
+			components.Enqueue(fieldobj);
+			Stack<FieldObject> sortedComponents = new Stack<FieldObject>();
 			while (components.Count > 0) {
-				ObjectComponents oc = components.Dequeue();
+				FieldObject oc = components.Dequeue();
 				sortedComponents.Push(oc);
-				for (int i = 0, imax = oc.itemComponents.Count; i < imax; i++) {
-					ObjectComponents ioc = oc.itemComponents[i];
-					if (ioc.itemComponents != null) { components.Enqueue(ioc); }
+				int ngo = oc.gos.Count;
+				for (int igo = 0; igo < ngo; igo++) {
+					var iocs = oc.gos[igo];
+					for (int i = 0, imax = iocs.itemFields.Count; i < imax; i++) {
+						FieldObject ioc = iocs.itemFields[i];
+						if (!string.IsNullOrEmpty(ioc.cls)) { components.Enqueue(ioc); }
+					}
 				}
 			}
+			List<ObjectComponents> ocses = new List<ObjectComponents>();
 			bool ret = false;
 			while (sortedComponents.Count > 0) {
-				ObjectComponents oc = sortedComponents.Pop();
-				//TODO find type
-				string typeFullName = string.IsNullOrEmpty(ns) ? oc.cls : string.Concat(ns, ".", oc.cls);
+				FieldObject fo = sortedComponents.Pop();
+				string typeFullName = string.IsNullOrEmpty(ns) ? fo.cls : string.Concat(ns, ".", fo.cls);
 				Type type = null;
 				Type ft = null;
 				Type tm = typeof(MonoBehaviour);
@@ -874,60 +956,94 @@ namespace GreatClock.Common.SerializeTools {
 				}
 				if (type == null) {
 					if (ft == null) {
-						Debug.LogErrorFormat("Cannot Find Type for {0} !", oc.cls);
+						Debug.LogErrorFormat("Cannot Find Type for {0} !", fo.cls);
 					} else {
 						Debug.LogErrorFormat("Type : '{0}' is not subclass of MonoBehaviour !", ft.FullName);
 					}
 				} else {
-					oc.type = type;
-					Component component = oc.go.GetComponent(type);
-					if (component == null) {
-						component = oc.go.AddComponent(type);
-					}
-					SerializedObject so = new SerializedObject(component);
-					List<ObjectComponents> itemComponents = oc.itemComponents;
-					int count = itemComponents.Count;
-					for (int i = 0; i < count; i++) {
-						ObjectComponents ioc = itemComponents[i];
-						SerializedProperty pObj = so.FindProperty(oc.publicProperty ? "m_" + ioc.name : ioc.name);
-						if (pObj == null) {
-							Debug.LogErrorFormat(ioc.go, "Cannot Find property for node '{0}' !", ioc.go.name);
-							continue;
+					fo.type = type;
+					foreach (ObjectComponents ocs in fo.gos) {
+						Component component = ocs.go.GetComponent(type);
+						if (component == null) {
+							component = ocs.go.AddComponent(type);
 						}
-						SerializedProperty pGO = pObj.FindPropertyRelative("m_GameObject");
-						pGO.objectReferenceValue = ioc.go;
-						int cCount = ioc.Count;
-						for (int j = 0; j < cCount; j++) {
-							ComponentData cd = ioc[j];
-							SerializedProperty pComponent = pObj.FindPropertyRelative("m_" + cd.type.variableName);
-							if (pComponent == null) {
-								Debug.LogErrorFormat(cd.component, "Cannot Find property for Component '{0}' at '{1}' !",
-									cd.type.variableName, ioc.go.name);
+						SerializedObject so = new SerializedObject(component);
+						List<FieldObject> itemFields = ocs.itemFields;
+						int count = itemFields.Count;
+						for (int i = 0; i < count; i++) {
+							FieldObject ifo = itemFields[i];
+							SerializedProperty pObj = so.FindProperty(fo.publicProperty ? "m_" + ifo.name : ifo.name);
+							ocses.Clear();
+							ifo.SortObjects(ocses);
+							List<SupportedTypeData> types = new List<SupportedTypeData>();
+							ifo.GetComponentTypes(types);
+							List<SupportedTypeData> ts = new List<SupportedTypeData>();
+							int ngo = ocses.Count;
+							if (ifo.isArray) {
+								while (pObj.arraySize > ngo) { pObj.DeleteArrayElementAtIndex(pObj.arraySize - 1); }
+								while (pObj.arraySize < ngo) { pObj.InsertArrayElementAtIndex(pObj.arraySize); }
+							}
+							for (int igo = 0; igo < ngo; igo++) {
+								ObjectComponents iocs = ocses[igo];
+								SerializedProperty po = ifo.isArray && pObj != null ? pObj.GetArrayElementAtIndex(igo) : pObj;
+								if (po == null) {
+									if (iocs != null) {
+										Debug.LogErrorFormat(iocs.go, "Cannot Find property for node '{0}' !", iocs.go.name);
+									}
+									continue;
+								}
+								ts.Clear();
+								ts.AddRange(types);
+								SerializedProperty pGO = po.FindPropertyRelative("m_GameObject");
+								if (iocs != null) {
+									pGO.objectReferenceValue = iocs.go;
+									int cCount = iocs.Count;
+									for (int j = 0; j < cCount; j++) {
+										ComponentData cd = iocs[j];
+										SerializedProperty pComponent = po.FindPropertyRelative("m_" + cd.type.variableName);
+										if (pComponent == null) {
+											Debug.LogErrorFormat(cd.component, "Cannot Find property for Component '{0}' at '{1}' !",
+												cd.type.variableName, iocs.go.name);
+											continue;
+										}
+										pComponent.objectReferenceValue = cd.component;
+										ts.Remove(cd.type);
+									}
+								} else {
+									pGO.objectReferenceValue = null;
+								}
+								for (int j = ts.Count - 1; j >= 0; j--) {
+									SupportedTypeData std = ts[j];
+									SerializedProperty pComponent = po.FindPropertyRelative("m_" + std.variableName);
+									if (pComponent == null) {
+										Debug.LogErrorFormat("Cannot Find property for Component '{0}' !", std.variableName);
+										continue;
+									}
+									pComponent.objectReferenceValue = null;
+								}
+								if (iocs != null && ocs.itemFields != null && ifo.type != null) {
+									SerializedProperty pItem = po.FindPropertyRelative("m_" + ifo.clsVar);
+									if (pItem == null) {
+										Debug.LogErrorFormat(iocs.go, "Cannot Find item property for Component '{0}' at '{1}' !",
+											ifo.type.Name, iocs.go.name);
+									} else {
+										pItem.objectReferenceValue = iocs.go.GetComponent(ifo.type);
+									}
+								}
+							}
+						}
+						int aon = ocs.activeObjects == null ? 0 : ocs.activeObjects.Count;
+						for (int i = 0; i < aon; i++) {
+							ActiveGameObject ao = ocs.activeObjects[i];
+							SerializedProperty pGO = so.FindProperty("m_" + ao.name);
+							if (pGO == null) {
+								Debug.LogErrorFormat(ao.go, "Cannot Find property for GameObject '{0}' !", ao.go.name);
 								continue;
 							}
-							pComponent.objectReferenceValue = cd.component;
+							pGO.objectReferenceValue = ao.go;
 						}
-						if (ioc.itemComponents != null && ioc.type != null) {
-							SerializedProperty pItem = pObj.FindPropertyRelative("m_" + ioc.clsVar);
-							if (pItem == null) {
-								Debug.LogErrorFormat(ioc.go, "Cannot Find item property for Component '{0}' at '{1}' !",
-									ioc.type.Name, ioc.go.name);
-							} else {
-								pItem.objectReferenceValue = ioc.go.GetComponent(ioc.type);
-							}
-						}
+						if (so.ApplyModifiedProperties()) { EditorUtility.SetDirty(component); ret = true; }
 					}
-					int aon = oc.activeObjects == null ? 0 : oc.activeObjects.Count;
-					for (int i = 0; i < aon; i++) {
-						ActiveGameObject ao = oc.activeObjects[i];
-						SerializedProperty pGO = so.FindProperty("m_" + ao.name);
-						if (pGO == null) {
-							Debug.LogErrorFormat(ao.go, "Cannot Find property for GameObject '{0}' !", ao.go.name);
-							continue;
-						}
-						pGO.objectReferenceValue = ao.go;
-					}
-					if (so.ApplyModifiedProperties()) { EditorUtility.SetDirty(component); ret = true; }
 				}
 			}
 			return ret;
@@ -961,37 +1077,41 @@ namespace GreatClock.Common.SerializeTools {
 
 		private List<CodeObject> GetCodes(string ns) {
 			List<CodeObject> codes = new List<CodeObject>();
-			if (mRootComponents == null) { return codes; }
+			if (mRootFieldObject == null) { return codes; }
 			List<ClassData> clses = new List<ClassData>();
-			Queue<ObjectComponents> components = new Queue<ObjectComponents>();
-			components.Enqueue(mRootComponents);
+			Queue<FieldObject> components = new Queue<FieldObject>();
+			components.Enqueue(mRootFieldObject);
 			while (components.Count > 0) {
-				ObjectComponents ocs = components.Dequeue();
-				List<ObjectComponents> itemComponents = ocs.itemComponents;
-				if (itemComponents == null) { continue; }
-				ClassData cd = null;
-				for (int i = clses.Count - 1; i >= 0; i--) {
-					if (clses[i].cls == ocs.cls) {
-						cd = clses[i];
-						break;
+				FieldObject fo = components.Dequeue();
+				int ngo = fo.gos.Count;
+				for (int igo = 0; igo < ngo; igo++) {
+					ObjectComponents ocs = fo.gos[igo];
+					List<FieldObject> itemComponents = ocs.itemFields;
+					if (itemComponents == null) { continue; }
+					ClassData cd = null;
+					for (int i = clses.Count - 1; i >= 0; i--) {
+						if (clses[i].cls == fo.cls) {
+							cd = clses[i];
+							break;
+						}
 					}
-				}
-				if (cd == null) {
-					cd = new ClassData();
-					cd.cls = ocs.cls;
-					clses.Add(cd);
-				}
-				if (!GetClass(ocs, cd)) {
-					// TODO class not match...
-				}
-				/*string code = GetCode(ns, ocs);
-				if (!string.IsNullOrEmpty(code)) {
-					codes.Add(new CodeObject(string.Concat(ocs.cls, ".cs"), code));
-				}*/
-				for (int i = 0, imax = itemComponents.Count; i < imax; i++) {
-					ObjectComponents ioc = itemComponents[i];
-					if (ioc.itemComponents == null) { continue; }
-					components.Enqueue(ioc);
+					if (cd == null) {
+						cd = new ClassData();
+						cd.cls = fo.cls;
+						clses.Add(cd);
+					}
+					if (!GetClass(fo, cd)) {
+						// TODO class not match...
+					}
+					/*string code = GetCode(ns, fo);
+					if (!string.IsNullOrEmpty(code)) {
+						codes.Add(new CodeObject(string.Concat(fo.cls, ".cs"), code));
+					}*/
+					for (int i = 0, imax = itemComponents.Count; i < imax; i++) {
+						FieldObject ioc = itemComponents[i];
+						if (ocs.itemFields == null) { continue; }
+						components.Enqueue(ioc);
+					}
 				}
 			}
 			Comparison<SupportedTypeData> typeSorter = SortSupportedTypeDatas;
@@ -1036,13 +1156,13 @@ namespace GreatClock.Common.SerializeTools {
 					if (!string.IsNullOrEmpty(field.itemType)) { return true; }
 					if (field.HasClear()) { return true; }
 				}
-				// TODO openclears
 				return false;
 			}
 		}
 		private class FieldData {
 			public string name;
 			public bool isField;
+			public bool isArray;
 			public string itemType;
 			public ClassData itemClass;
 			public string itemVar;
@@ -1057,59 +1177,55 @@ namespace GreatClock.Common.SerializeTools {
 			}
 		}
 
-		private static bool GetClass(ObjectComponents ocs, ClassData cls) {
-			if (cls.cls != ocs.cls) { return false; }
-			if (cls.baseClass != null && cls.baseClass != ocs.baseClass) { return false; }
-			cls.baseClass = ocs.baseClass;
-			cls.partialClass |= ocs.partialClass;
-			cls.publicProperty |= ocs.publicProperty;
-			List<ObjectComponents> objComponents = ocs.itemComponents;
-			for (int i = 0, imax = objComponents.Count; i < imax; i++) {
-				ObjectComponents oc = objComponents[i];
-				FieldData field = null;
-				for (int j = cls.fields.Count - 1; j >= 0; j--) {
-					FieldData f = cls.fields[j];
-					if (f.name == oc.name) {
-						field = f;
-						break;
-					}
-				}
-				if (field == null) {
-					field = new FieldData();
-					field.name = oc.name;
-					field.isField = oc.isField;
-					field.itemType = null;
-					cls.fields.Add(field);
-				}
-				for (int j = 0, jmax = oc.Count; j < jmax; j++) {
-					SupportedTypeData type = oc[j].type;
-					for (int k = field.components.Count - 1; k >= 0; k--) {
-						if (field.components[k].showName == type.showName) {
-							type = null;
+		private static bool GetClass(FieldObject fo, ClassData cls) {
+			if (cls.cls != fo.cls) { return false; }
+			if (cls.baseClass != null && cls.baseClass != fo.baseClass) { return false; }
+			cls.baseClass = fo.baseClass;
+			cls.partialClass |= fo.partialClass;
+			cls.publicProperty |= fo.publicProperty;
+			int ngo = fo.gos.Count;
+			for (int igo = 0; igo < ngo; igo++) {
+				ObjectComponents ocs = fo.gos[igo];
+				List<FieldObject> itemFields = ocs.itemFields;
+				for (int i = 0, imax = itemFields.Count; i < imax; i++) {
+					FieldObject ifo = itemFields[i];
+					FieldData field = null;
+					for (int j = cls.fields.Count - 1; j >= 0; j--) {
+						FieldData f = cls.fields[j];
+						if (f.name == ifo.name) {
+							field = f;
 							break;
 						}
 					}
-					if (type != null) { field.components.Add(type); }
-				}
-				if (oc.itemComponents != null) {
-					string itemClass = oc.cls;
-					for (int k = field.components.Count - 1; k >= 0; k--) {
-						if (field.components[k].showName == itemClass) {
-							itemClass = null;
-							break;
+					if (field == null) {
+						field = new FieldData();
+						field.name = ifo.name;
+						field.isField = ifo.isField;
+						field.isArray = ifo.isArray;
+						field.itemType = null;
+						cls.fields.Add(field);
+					}
+					ifo.GetComponentTypes(field.components);
+					if (ocs.itemFields != null) {
+						string itemClass = ifo.cls;
+						for (int k = field.components.Count - 1; k >= 0; k--) {
+							if (field.components[k].showName == itemClass) {
+								itemClass = null;
+								break;
+							}
+						}
+						if (itemClass != null) {
+							field.components.Add(new SupportedTypeData(null, 10000, ifo.cls, null, ifo.cls, ifo.clsVar, true, false));
+							field.itemType = ifo.cls;
+							field.itemVar = ifo.clsVar;
 						}
 					}
-					if (itemClass != null) {
-						field.components.Add(new SupportedTypeData(null, 10000, oc.cls, null, oc.cls, oc.clsVar, true, false));
-						field.itemType = oc.cls;
-						field.itemVar = oc.clsVar;
-					}
 				}
-			}
-			int aon = ocs.activeObjects == null ? 0 : ocs.activeObjects.Count;
-			for (int i = 0; i < aon; i++) {
-				ActiveGameObject item = ocs.activeObjects[i];
-				cls.actives.Add(item.name);
+				int aon = ocs.activeObjects == null ? 0 : ocs.activeObjects.Count;
+				for (int i = 0; i < aon; i++) {
+					ActiveGameObject item = ocs.activeObjects[i];
+					cls.actives.Add(item.name);
+				}
 			}
 			return true;
 		}
@@ -1121,6 +1237,8 @@ namespace GreatClock.Common.SerializeTools {
 			StringBuilder code = new StringBuilder();
 			List<string> openInvokes = new List<string>();
 			List<string> clearInvokes = new List<string>();
+			List<string> compOpenInvokes = new List<string>();
+			List<string> compClearInvokes = new List<string>();
 			code.AppendLine("#pragma warning disable 649");
 			code.AppendLine();
 			Dictionary<string, KeyValuePair<string, string>> itemClasses = new Dictionary<string, KeyValuePair<string, string>>();
@@ -1136,6 +1254,8 @@ namespace GreatClock.Common.SerializeTools {
 			List<string> tempStrings = new List<string>();
 			for (int i = 0, imax = cls.fields.Count; i < imax; i++) {
 				FieldData field = cls.fields[i];
+				compOpenInvokes.Clear();
+				compClearInvokes.Clear();
 				string pfn = cls.publicProperty ? "m_" + field.name : field.name;
 				tempStrings.Clear();
 				for (int j = 0, jmax = field.components.Count; j < jmax; j++) {
@@ -1145,19 +1265,45 @@ namespace GreatClock.Common.SerializeTools {
 					if (field.itemClass == null) {
 						string[] clearCalls = typeData.GetClearCalls();
 						if (clearCalls != null && clearCalls.Length > 0) {
-							string objstr = pfn + "." + typeData.variableName + "?.";
 							foreach (string cc in clearCalls) {
-								clearInvokes.Add(objstr + cc);
+								compClearInvokes.Add(string.Format("{0}?.{1}", typeData.variableName, cc));
 							}
 						}
 						if (typeData.HasOpen()) {
-							openInvokes.Add(pfn + "." + typeData.variableName + "?.Open()");
+							compOpenInvokes.Add(string.Format("{0}?.Open()", typeData.variableName));
 						}
 					} else if (typeData.type == null) {
 						if (field.itemClass.HasClear()) {
-							clearInvokes.Add(pfn + "." + typeData.variableName + "?.Clear()");
+							compClearInvokes.Add(string.Format("{0}?.Clear()", typeData.variableName));
 						}
-						openInvokes.Add(pfn + "." + typeData.variableName + "?.Open()");
+						compOpenInvokes.Add(string.Format("{0}?.Open()", typeData.variableName));
+					}
+				}
+				if (field.isArray) {
+					if (compOpenInvokes.Count > 0) {
+						openInvokes.Add(string.Format("for (int i = 0; i < {0}.Length; i++) {{", pfn));
+						foreach (string oi in compOpenInvokes) {
+							openInvokes.Add(string.Format("\t{0}[i]?.{1};", pfn, oi));
+						}
+						openInvokes.Add("}");
+					}
+					if (compClearInvokes.Count > 0) {
+						clearInvokes.Add(string.Format("for (int i = 0; i < {0}.Length; i++) {{", pfn));
+						foreach (string oi in compClearInvokes) {
+							clearInvokes.Add(string.Format("\t{0}[i]?.{1};", pfn, oi));
+						}
+						clearInvokes.Add("}");
+					}
+				} else {
+					if (compOpenInvokes.Count > 0) {
+						foreach (string oi in compOpenInvokes) {
+							openInvokes.Add(string.Format("{0}.{1};", pfn, oi));
+						}
+					}
+					if (compClearInvokes.Count > 0) {
+						foreach (string oi in compClearInvokes) {
+							clearInvokes.Add(string.Format("{0}.{1};", pfn, oi));
+						}
 					}
 				}
 				string objTypeName = string.Concat(string.Join("_", tempStrings.ToArray()), "_Container");
@@ -1166,21 +1312,22 @@ namespace GreatClock.Common.SerializeTools {
 				}
 				tempStrings.Clear();
 				code.AppendLine(string.Format("{0}\t[SerializeField]", codeIndent));
+				var typename = field.isArray ? objTypeName + "[]" : objTypeName;
 				if (cls.publicProperty) {
-					code.AppendLine(string.Format("{0}\tprivate {1} {2};", codeIndent, objTypeName, pfn));
+					code.AppendLine(string.Format("{0}\tprivate {1} {2};", codeIndent, typename, pfn));
 					if (field.isField) {
 						code.AppendLine(string.Format("{0}\tpublic {1} {2} {{ get {{ return {3}; }} }}",
-							codeIndent, objTypeName, field.name, pfn));
+							codeIndent, typename, field.name, pfn));
 					}
 				} else {
-					code.AppendLine(string.Format("{0}\tprivate {1} {2};", codeIndent, objTypeName, field.name));
+					code.AppendLine(string.Format("{0}\tprivate {1} {2};", codeIndent, typename, field.name));
 				}
 				code.AppendLine();
 				if (!string.IsNullOrEmpty(field.itemType) && !string.IsNullOrEmpty(field.itemVar) && !itemClasses.ContainsKey(objTypeName)) {
 					itemClasses.Add(objTypeName, new KeyValuePair<string, string>(field.itemType, field.itemVar));
 				}
-				if (field.itemClass != null) {
-					clearInvokes.Add(pfn + ".CacheAll()");
+				if (field.itemClass != null && !field.isArray) {
+					clearInvokes.Add(pfn + ".CacheAll();");
 				}
 			}
 			int aon = cls.actives.Count;
@@ -1188,12 +1335,12 @@ namespace GreatClock.Common.SerializeTools {
 				string item = cls.actives[i];
 				code.AppendLine(string.Format("{0}\t[SerializeField]", codeIndent));
 				code.AppendLine(string.Format("{0}\tprivate {1} m_{2};", codeIndent, "GameObject", item));
-				openInvokes.Add(string.Format("m_{0}?.SetActive(true)", item));
+				openInvokes.Add(string.Format("m_{0}?.SetActive(true);", item));
 			}
 			if (aon > 0) { code.AppendLine(); }
 			code.AppendLine(string.Format("{0}\tpublic void Open() {{", codeIndent));
 			foreach (string oi in openInvokes) {
-				code.AppendLine(string.Format("{0}\t\t{1};", codeIndent, oi));
+				code.AppendLine(string.Format("{0}\t\t{1}", codeIndent, oi));
 			}
 			code.AppendLine(string.Format("{0}\t}}", codeIndent));
 			code.AppendLine();
@@ -1207,7 +1354,7 @@ namespace GreatClock.Common.SerializeTools {
 			code.AppendLine();
 			code.AppendLine(string.Format("{0}\tpublic void Clear() {{", codeIndent));
 			foreach (string ci in clearInvokes) {
-				code.AppendLine(string.Format("{0}\t\t{1};", codeIndent, ci));
+				code.AppendLine(string.Format("{0}\t\t{1}", codeIndent, ci));
 			}
 			code.AppendLine(string.Format("{0}\t\tif (mOnClear != null) {{ mOnClear.Invoke(); mOnClear.RemoveAllListeners(); }}", codeIndent));
 			code.AppendLine(string.Format("{0}\t}}", codeIndent));
@@ -1368,92 +1515,157 @@ namespace GreatClock.Common.SerializeTools {
 			public GameObject go;
 		}
 
-		private struct ObjectComponentsWithIndent {
+		private struct FieldObjectWithIndent {
 			public int indent;
-			public ObjectComponents components;
+			public int index;
+			public FieldObject fieldobject;
 		}
 
 		private class ObjectComponents {
-			public string name { get; private set; }
 			public GameObject go { get; private set; }
-			public string cls { get; private set; }
-			public string clsVar { get; private set; }
-			public List<ObjectComponents> itemComponents { get; private set; }
-			public List<ActiveGameObject> activeObjects { get; private set; }
+			public int Index { get; set; }
 			public int Count { get { return mComponents.Count; } }
 			public bool abortChild { get; private set; }
+			public List<FieldObject> itemFields { get; private set; }
+			public List<ActiveGameObject> activeObjects { get; private set; }
+			public ComponentData this[int i] {
+				get { return mComponents[i]; }
+			}
+			public ObjectComponents(GameObject go, bool isRoot, bool isField, List<FieldObject> itemFields, List<ActiveGameObject> activeObjects) {
+				this.go = go;
+				this.itemFields = itemFields;
+				this.activeObjects = activeObjects;
+				abortChild = false;
+				temp_components.Clear();
+				go.GetComponents<Component>(temp_components);
+				string goname = go.name;
+				for (int j = temp_components.Count - 1; j >= 0; j--) {
+					Component component = temp_components[j];
+					if (component == null || component.Equals(null)) { continue; }
+					Type type = component.GetType();
+					SupportedTypeData std = GetSupportedTypeData(type);
+					if (std == null) { continue; }
+					if (!isField && !std.HasOpen() && !std.HasClear()) { continue; }
+					if (!isRoot || goname != std.type.Name) {
+						ComponentData data = new ComponentData();
+						data.type = std;
+						data.component = component;
+						mComponents.Add(data);
+					}
+					if (std.abortChild && !isRoot) { abortChild = true; }
+				}
+				temp_components.Clear();
+			}
+			private List<ComponentData> mComponents = new List<ComponentData>();
+		}
+
+		private class FieldObject {
+			public string name { get; private set; }
+			public List<ObjectComponents> gos { get; private set; }
+			public bool isArray { get; private set; }
+			public string cls { get; private set; }
+			public string clsVar { get; private set; }
 			public bool isField { get; private set; }
 			public int baseClassIndex;
 			public string baseClass = "MonoBehaviour";
 			public bool partialClass;
 			public bool publicProperty;
 			public Type type;
-			public static ObjectComponents GetForField(GameObject go, bool isroot, string name) {
-				ObjectComponents ret = new ObjectComponents(go, name);
-				InitComponents(ret, isroot);
+			public static FieldObject GetForField(string name, ObjectComponents ocs) {
+				FieldObject ret = new FieldObject(name, ocs);
+				ret.isField = true;
+				ret.isArray = false;
 				return ret;
 			}
-			public static ObjectComponents GetForOpenClear(GameObject go, string name) {
-				ObjectComponents ret = null;
-				go.GetComponents<Component>(temp_components);
-				for (int i = 0, imax = temp_components.Count; i < imax; i++) {
-					Component component = temp_components[i];
-					if (component == null || component.Equals(null)) { continue; }
-					SupportedTypeData std = GetSupportedTypeData(component.GetType());
-					if (std == null) { continue; }
-					bool hasOpen = std.HasOpen();
-					bool hasClear = std.HasClear();
-					if (!hasOpen && !hasClear) { continue; }
-					if (ret == null) { ret = new ObjectComponents(go, name); }
-					ComponentData data = new ComponentData();
-					data.type = std;
-					data.component = component;
-					ret.mComponents.Add(data);
-					if (std.abortChild) { ret.abortChild = true; }
+			public static FieldObject GetForField(string name) {
+				FieldObject ret = new FieldObject(name);
+				ret.isField = true;
+				ret.isArray = true;
+				return ret;
+			}
+			public static FieldObject GetForOpenClear(GameObject go, string name) {
+				FieldObject ret = null;
+				ObjectComponents ocs = new ObjectComponents(go, false, false, null, null);
+				if (ocs.Count > 0) {
+					ret = new FieldObject(name);
+					ret.gos.Add(ocs);
+					ret.isField = false;
+					ret.isArray = false;
 				}
-				ret.isField = false;
 				return ret;
 			}
-			public static ObjectComponents GetForContainer(GameObject go, bool isroot, string name, string cls, string clsVar,
-				List<ObjectComponents> itemComponents, List<ActiveGameObject> activeObjects) {
-				ObjectComponents ret = new ObjectComponents(go, name);
+			public static FieldObject GetForContainer(string name, ObjectComponents ocs, string cls, string clsVar) {
+				FieldObject ret = new FieldObject(name, ocs);
 				ret.cls = cls;
 				ret.clsVar = clsVar;
-				ret.itemComponents = itemComponents;
-				ret.activeObjects = activeObjects;
-				InitComponents(ret, isroot);
+				ret.isField = true;
+				ret.isArray = false;
 				return ret;
 			}
-			private static void InitComponents(ObjectComponents ocs, bool isroot) {
-				temp_components.Clear();
-				ocs.go.GetComponents<Component>(temp_components);
-				string goname = ocs.go.name;
-				for (int i = 0, imax = temp_components.Count; i < imax; i++) {
-					Component component = temp_components[i];
-					if (component == null || component.Equals(null)) { continue; }
-					if (ocs.itemComponents != null && !(component is Transform)) { continue; }
-					SupportedTypeData std = GetSupportedTypeData(component.GetType());
-					if (std == null) { continue; }
-					if (!isroot || goname != std.type.Name) {
-						ComponentData data = new ComponentData();
-						data.type = std;
-						data.component = component;
-						ocs.mComponents.Add(data);
+			public static FieldObject GetForContainer(string name, string cls, string clsVar) {
+				FieldObject ret = new FieldObject(name);
+				ret.cls = cls;
+				ret.clsVar = clsVar;
+				ret.isField = true;
+				ret.isArray = true;
+				return ret;
+			}
+
+			public bool abortChild {
+				get {
+					for (int i = gos.Count - 1; i >= 0; i--) {
+						if (gos[i].abortChild) { return true; }
 					}
-					if (std.abortChild && !isroot) { ocs.abortChild = true; }
+					return false;
 				}
-				temp_components.Clear();
-				ocs.isField = true;
 			}
-			public ComponentData this[int i] {
-				get { return mComponents[i]; }
+			public void GetComponentTypes(List<SupportedTypeData> types) {
+				for (int i = gos.Count - 1; i >= 0; i--) {
+					ObjectComponents ocs = gos[i];
+					for (int j = ocs.Count - 1; j >= 0; j--) {
+						SupportedTypeData type = ocs[j].type;
+						if (!types.Contains(type)) { types.Add(type); }
+					}
+				}
 			}
-			private ObjectComponents(GameObject go, string name) {
-				this.go = go;
+			public void SortObjects(List<ObjectComponents> objs) {
+				temp_ocs.Clear();
+				int n = gos.Count;
+				for (int i = 0; i < n; i++) {
+					ObjectComponents ocs = gos[i];
+					if (ocs.Index < 0) {
+						temp_ocs.Add(ocs);
+						continue;
+					}
+					while (objs.Count <= ocs.Index) { objs.Add(null); }
+					objs[ocs.Index] = ocs;
+				}
+				n = temp_ocs.Count;
+				int len = objs.Count;
+				int j = -1;
+				for (int i = 0; i < n; i++) {
+					ObjectComponents ocs = temp_ocs[i];
+					bool flag = true;
+					while (++j < len) {
+						if (objs[j] == null) {
+							objs[j] = ocs;
+							flag = false;
+							break;
+						}
+					}
+					if (flag) { objs.Add(ocs); }
+				}
+				temp_ocs.Clear();
+			}
+			private FieldObject(string name) {
+				gos = new List<ObjectComponents>();
 				this.name = name;
-				abortChild = false;
 			}
-			private List<ComponentData> mComponents = new List<ComponentData>();
+			private FieldObject(string name, ObjectComponents ocs) {
+				gos = new List<ObjectComponents>();
+				gos.Add(ocs);
+				this.name = name;
+			}
 		}
 
 		private class CodeObject {
