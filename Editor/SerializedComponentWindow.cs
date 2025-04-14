@@ -1292,6 +1292,7 @@ namespace GreatClock.Common.SerializeTools {
 						foreach (string oi in compClearInvokes) {
 							clearInvokes.Add(string.Format("\t{0}[i]?.{1};", pfn, oi));
 						}
+						if (field.itemClass != null) { clearInvokes.Add(string.Format("\t{0}[i]?.CacheAll();", pfn)); }
 						clearInvokes.Add("}");
 					}
 				} else {
