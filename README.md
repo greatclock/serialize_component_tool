@@ -1,4 +1,4 @@
-[中文ReadMe文档](./ReadMe_cn.md)。
+[中文ReadMe文档](./README_CN.md)。
 
 # Description
 
