@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -15,8 +16,8 @@ namespace GreatClock.Common.SerializeTools {
 
 		#region MenuItem
 
-		[MenuItem("GreatClock/Serialize Tools/C# Serialized Component")]
-		[MenuItem("Assets/GreatClock/Serialize Tools/C# Serialized Component", false)]
+		[MenuItem("GreatClock/Open Binging Tool")]
+		[MenuItem("Assets/GreatClock/Open Binding Tool", false)]
 		static void OpenSerializedComponentWindow() {
 			SerializedComponentWindow win = GetWindow<SerializedComponentWindow>("Component Viewer");
 			win.minSize = new Vector2(480f, 300f);
@@ -25,7 +26,7 @@ namespace GreatClock.Common.SerializeTools {
 		}
 
 
-		[MenuItem("Assets/GreatClock/Serialize Tools/C# Serialized Component", true)]
+		[MenuItem("Assets/GreatClock/Open Binding Tool", true)]
 		static bool CanAssetOpenSerializedComponentWindow() {
 			return Selection.activeGameObject != null;
 		}
@@ -49,7 +50,7 @@ namespace GreatClock.Common.SerializeTools {
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeText() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Text), 100).SetRequireClearOnRecycle(false);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Text), 100).SetClearEventsOnClear(false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeButton() {
@@ -73,11 +74,11 @@ namespace GreatClock.Common.SerializeTools {
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeImage() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.Image), 102).SetRequireClearOnRecycle(false);
+			return new SupportedTypeData(typeof(UnityEngine.UI.Image), 102).SetClearEventsOnClear(false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeRawImage() {
-			return new SupportedTypeData(typeof(UnityEngine.UI.RawImage), 102).SetRequireClearOnRecycle(false);
+			return new SupportedTypeData(typeof(UnityEngine.UI.RawImage), 102).SetClearEventsOnClear(false);
 		}
 		[SupportedComponentType]
 		static SupportedTypeData DefineTypeCanvas() {
@@ -141,7 +142,7 @@ namespace GreatClock.Common.SerializeTools {
 								}
 							}
 							if (add) {
-								td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName, td.clearEventsOnRecycle, td.abortChild);
+								td = new SupportedTypeData(td.type, td.priority, showName, nameSpace, codeTypeName, variableName, td.clearEventsOnClear, td.abortChild);
 								supported_type_datas.Add(td.type, td);
 							}
 						}
@@ -251,7 +252,16 @@ namespace GreatClock.Common.SerializeTools {
 
 		[InitializeOnLoadMethod]
 		private static void InitLanguage() {
-			s_current_language = (eLanguage)EditorPrefs.GetInt(GetKey("lang"));
+			int lang = EditorPrefs.GetInt(GetKey("lang"), -1);
+			if (lang < 0) {
+				if (CultureInfo.CurrentCulture.ThreeLetterWindowsLanguageName.ToLower() == "chs") {
+					s_current_language = eLanguage.CHS;
+				} else {
+					s_current_language = eLanguage.EN;
+				}
+			} else {
+				s_current_language = (eLanguage)lang;
+			}
 			SetLanguage(s_current_language);
 		}
 
@@ -1307,7 +1317,7 @@ namespace GreatClock.Common.SerializeTools {
 						}
 					}
 				}
-				string objTypeName = string.Concat(string.Join("_", tempStrings.ToArray()), "_Container");
+				string objTypeName = string.Concat(string.Join("_", tempStrings.ToArray()), "_Set");
 				if (!dataClasses.ContainsKey(objTypeName)) {
 					dataClasses.Add(objTypeName, field.components.ToArray());
 				}

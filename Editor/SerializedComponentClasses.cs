@@ -18,19 +18,19 @@ namespace GreatClock.Common.SerializeTools {
 		public string nameSpace { get; private set; }
 		public string codeTypeName { get; private set; }
 		public string variableName { get; private set; }
-		public bool clearEventsOnRecycle { get; private set; }
+		public bool clearEventsOnClear { get; private set; }
 		public bool abortChild { get; private set; }
 
 		public SupportedTypeData(Type type, int priority,
 			string showName, string nameSpace, string codeTypeName, string variableName,
-			bool clearEventsOnRecycle, bool abortChild) {
+			bool clearEventsOnClear, bool abortChild) {
 			this.type = type;
 			this.priority = priority;
 			this.showName = showName;
 			this.nameSpace = nameSpace;
 			this.codeTypeName = codeTypeName;
 			this.variableName = variableName;
-			this.clearEventsOnRecycle = clearEventsOnRecycle;
+			this.clearEventsOnClear = clearEventsOnClear;
 			this.abortChild = abortChild;
 		}
 
@@ -41,7 +41,7 @@ namespace GreatClock.Common.SerializeTools {
 			nameSpace = null;
 			codeTypeName = null;
 			variableName = null;
-			clearEventsOnRecycle = true;
+			clearEventsOnClear = true;
 			abortChild = false;
 		}
 
@@ -65,8 +65,8 @@ namespace GreatClock.Common.SerializeTools {
 			return this;
 		}
 
-		public SupportedTypeData SetRequireClearOnRecycle(bool requireClearOnRecycle) {
-			this.clearEventsOnRecycle = requireClearOnRecycle;
+		public SupportedTypeData SetClearEventsOnClear(bool clearEventsOnClear) {
+			this.clearEventsOnClear = clearEventsOnClear;
 			return this;
 		}
 
@@ -113,7 +113,7 @@ namespace GreatClock.Common.SerializeTools {
 		public string[] GetClearCalls() {
 			if (mClearCalls == null) {
 				s_temp_strings.Clear();
-				if (clearEventsOnRecycle) {
+				if (clearEventsOnClear) {
 					BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
 					foreach (MemberInfo member in type.GetMembers(flags)) {
 						Type fieldType = null;
